@@ -6,10 +6,10 @@ import './globals.css'
 
 export const metadata: Metadata = {
   title: {
-    default: 'Next English Institute — Evaluaciones',
-    template: '%s | Next English Institute',
+    default: 'OnGest — Plataforma de Evaluaciones',
+    template: '%s | OnGest',
   },
-  description: 'Plataforma de evaluaciones de inglés online',
+  description: 'OnGest — Plataforma de evaluaciones de inglés online',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

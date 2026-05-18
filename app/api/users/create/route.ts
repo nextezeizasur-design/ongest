@@ -71,21 +71,18 @@ export async function POST(request: NextRequest) {
       }
     )
 
-    // Generar contraseña temporal segura
-    const tempPassword =
-      Math.random().toString(36).slice(2, 6).toUpperCase() +
-      Math.random().toString(36).slice(2, 6) +
-      '1!'
-
-    const { data: newUser, error: createError } = await (adminSupabase as any).auth.admin.createUser({
-      email:         email.trim().toLowerCase(),
-      password:      tempPassword,
-      email_confirm: true,
-      user_metadata: {
-        first_name:      first_name.trim(),
-        last_name:       last_name.trim(),
-        role_id:         ROLE_IDS[role],
-        organization_id: organization_id,
+    // ✅ Opción A: invite por email — el usuario elige su propia contraseña
+    // No se genera ni guarda ninguna contraseña temporal
+    const { data: inviteData, error: createError } = await (adminSupabase as any).auth.admin.generateLink({
+      type:  'invite',
+      email: email.trim().toLowerCase(),
+      options: {
+        data: {
+          first_name:      first_name.trim(),
+          last_name:       last_name.trim(),
+          role_id:         ROLE_IDS[role],
+          organization_id: organization_id,
+        },
       },
     })
 
@@ -98,6 +95,8 @@ export async function POST(request: NextRequest) {
       }
       return NextResponse.json({ error: createError.message }, { status: 400 })
     }
+
+    const newUser = inviteData?.user ?? inviteData
 
     // Actualizar el perfil creado por el trigger
     await (adminSupabase as any)
@@ -112,7 +111,7 @@ export async function POST(request: NextRequest) {
       })
       .eq('id', newUser.user.id)
 
-    return NextResponse.json({ success: true, temp_password: tempPassword })
+    return NextResponse.json({ success: true, invited: true })
 
   } catch (err: any) {
     return NextResponse.json(

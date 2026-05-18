@@ -1,0 +1,121 @@
+import { requireRole } from '@/lib/auth'
+import { getCourseWithStudents } from '@/services/courses'
+import TopBar from '@/components/layout/TopBar'
+import CefrPill from '@/components/ui/CefrPill'
+import Avatar from '@/components/ui/Avatar'
+import Badge from '@/components/ui/Badge'
+import EmptyState from '@/components/ui/EmptyState'
+
+export default async function CourseDetailPage({
+  params,
+}: {
+  params: Promise<{ id: string }>
+}) {
+  const { id }  = await params
+  await requireRole(['director', 'coordinator'] as any)
+
+  const { course, students } = await getCourseWithStudents(id)
+
+  if (!course) {
+    return (
+      <div className="flex flex-1 items-center justify-center">
+        <p className="text-gray-400">Curso no encontrado.</p>
+      </div>
+    )
+  }
+
+  const cefrLevel = (course as any).cefr_levels
+
+  return (
+    <div className="flex flex-1 flex-col overflow-hidden">
+      <TopBar
+        title={course.name}
+        subtitle={cefrLevel ? `${cefrLevel.label} · ${cefrLevel.code}` : 'Sin nivel asignado'}
+        actions={
+          <div className="flex gap-2">
+            {cefrLevel && <CefrPill code={cefrLevel.code} />}
+          </div>
+        }
+      />
+
+      <main className="flex-1 overflow-y-auto p-6 space-y-5">
+
+        {/* Info */}
+        <div className="card">
+          <h2 className="mb-3 text-sm font-semibold text-gray-900">Información del curso</h2>
+          <div className="grid grid-cols-2 gap-4 text-sm sm:grid-cols-3">
+            <div>
+              <p className="text-xs text-gray-400">Nivel</p>
+              <p className="font-medium text-gray-900">{cefrLevel ? `${cefrLevel.code} — ${cefrLevel.label}` : '—'}</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-400">Alumnos inscriptos</p>
+              <p className="font-medium text-gray-900">{students.length}</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-400">Estado</p>
+              <Badge variant={course.is_active ? 'green' : 'gray'}>
+                {course.is_active ? 'Activo' : 'Inactivo'}
+              </Badge>
+            </div>
+          </div>
+          {course.description && (
+            <p className="mt-3 text-sm text-gray-500 border-t border-gray-100 pt-3">{course.description}</p>
+          )}
+        </div>
+
+        {/* Alumnos */}
+        <div className="card p-0 overflow-hidden">
+          <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+            <h2 className="text-sm font-semibold text-gray-900">
+              Alumnos inscriptos
+              <span className="ml-2 text-gray-400 font-normal">({students.length})</span>
+            </h2>
+            <a href="/secretary/students" className="text-xs font-medium" style={{ color: '#642f8d' }}>
+              Gestionar →
+            </a>
+          </div>
+
+          {students.length === 0 ? (
+            <div className="py-12 text-center text-sm text-gray-400">
+              No hay alumnos inscriptos en este curso.
+              <br />
+              <a href="/secretary/students" className="mt-2 inline-block font-medium" style={{ color: '#642f8d' }}>
+                Inscribir alumnos →
+              </a>
+            </div>
+          ) : (
+            <table className="table-base">
+              <thead>
+                <tr>
+                  <th>Alumno</th>
+                  <th>Email</th>
+                  <th>Estado</th>
+                </tr>
+              </thead>
+              <tbody>
+                {students.map((s: any) => (
+                  <tr key={s.id}>
+                    <td>
+                      <div className="flex items-center gap-3">
+                        <Avatar firstName={s.first_name} lastName={s.last_name} size="sm" />
+                        <p className="font-medium text-gray-900">{s.first_name} {s.last_name}</p>
+                      </div>
+                    </td>
+                    <td className="text-gray-500">{s.email}</td>
+                    <td>
+                      <Badge variant={s.is_active ? 'green' : 'gray'}>
+                        {s.is_active ? 'Activo' : 'Inactivo'}
+                      </Badge>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+      </main>
+    </div>
+  )
+}

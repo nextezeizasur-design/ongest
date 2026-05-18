@@ -1,0 +1,82 @@
+export const dynamic = 'force-dynamic'
+
+import { requireRole } from '@/lib/auth'
+import { createClient } from '@/lib/supabase/server'
+import { getEnrollmentCounts } from '@/services/courses'
+import TopBar from '@/components/layout/TopBar'
+import EmptyState from '@/components/ui/EmptyState'
+import DirectorCoursesClient from '@/components/shared/DirectorCoursesClient'
+
+export const metadata = { title: 'Cursos' }
+
+export default async function CoordinatorCourses() {
+  const profile  = await requireRole(['director', 'coordinator'] as any)
+  const supabase = await createClient()
+  const sb       = supabase as any
+  const orgId    = profile.organization_id
+
+  const [{ data: courses }, counts, { data: teachers }] = await Promise.all([
+    sb.from('courses')
+      .select(`
+        id, name, description, is_active,
+        schedule_days, schedule_time, bibliography, notes,
+        cefr_level_id, teacher_id,
+        cefr_levels(id, code, label)
+      `)
+      .eq('organization_id', orgId)
+      .eq('is_active', true)
+      .order('name'),
+    getEnrollmentCounts(orgId),
+    sb.from('profiles')
+      .select('id, first_name, last_name')
+      .eq('organization_id', orgId)
+      .eq('role_id', 5)
+      .order('last_name'),
+  ])
+
+  // Enriquecer cursos con datos del docente (evita ambigüedad de FK)
+  const teacherIds = [...new Set((courses ?? []).map((c: any) => c.teacher_id).filter(Boolean))]
+  let teacherMap: Record<string, any> = {}
+  if (teacherIds.length > 0) {
+    const { data: teacherProfiles } = await sb
+      .from('profiles')
+      .select('id, first_name, last_name, email')
+      .in('id', teacherIds)
+    ;(teacherProfiles ?? []).forEach((t: any) => { teacherMap[t.id] = t })
+  }
+  const coursesWithTeacher = (courses ?? []).map((c: any) => ({
+    ...c,
+    profiles: c.teacher_id ? teacherMap[c.teacher_id] ?? null : null,
+  }))
+
+  const base = profile.role === 'director' ? '/director' : '/coordinator'
+
+  return (
+    <div className="flex flex-1 flex-col overflow-hidden">
+      <TopBar
+        title="Cursos"
+        subtitle={`${(courses ?? []).length} cursos activos`}
+        actions={
+          <a href="/coordinator/courses/new" className="btn-brand">+ Nuevo curso</a>
+        }
+      />
+      <main className="flex-1 overflow-y-auto p-6">
+        {(courses ?? []).length === 0 ? (
+          <EmptyState
+            title="Sin cursos"
+            description="Creá el primer curso."
+            action={<a href="/coordinator/courses/new" className="btn-brand">+ Nuevo curso</a>}
+          />
+        ) : (
+          <DirectorCoursesClient
+            courses={coursesWithTeacher}
+            counts={counts}
+            teachers={teachers ?? []}
+            baseHref={base}
+            canDelete={false}
+          />
+        )}
+      </main>
+    </div>
+  )
+}

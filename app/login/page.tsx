@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter, useSearchParams } from 'next/navigation'
 
@@ -13,44 +13,35 @@ interface OrgInfo {
 
 type View = 'login' | 'forgot' | 'forgot_sent'
 
-export default function LoginPage() {
-  const [email,     setEmail]     = useState('')
-  const [password,  setPassword]  = useState('')
-  const [error,     setError]     = useState<string | null>(null)
-  const [loading,   setLoading]   = useState(false)
-  const [view,      setView]      = useState<View>('login')
-  const [orgInfo,   setOrgInfo]   = useState<OrgInfo | null>(null)
-  const [orgSlug,   setOrgSlug]   = useState<string | null>(null)
+function LoginContent() {
+  const [email,    setEmail]    = useState('')
+  const [password, setPassword] = useState('')
+  const [error,    setError]    = useState<string | null>(null)
+  const [loading,  setLoading]  = useState(false)
+  const [view,     setView]     = useState<View>('login')
+  const [orgInfo,  setOrgInfo]  = useState<OrgInfo | null>(null)
 
   const router       = useRouter()
   const searchParams = useSearchParams()
   const supabase     = createClient()
 
-  // ── Cargar info de la org si viene ?org=slug ──────────────────
   useEffect(() => {
     const slug = searchParams.get('org')
     if (!slug) return
-    setOrgSlug(slug)
-
     fetch(`/api/org?slug=${encodeURIComponent(slug)}`)
       .then(r => r.ok ? r.json() : null)
-      .then(data => {
-        if (data) setOrgInfo(data)
-      })
+      .then(data => { if (data) setOrgInfo(data) })
       .catch(() => {})
   }, [searchParams])
 
   const brandColor   = orgInfo?.primaryColor ?? '#642f8d'
   const supportEmail = orgInfo?.supportEmail ?? 'soporte@ongest.app'
 
-  // ── Login ─────────────────────────────────────────────────────
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault()
     setLoading(true)
     setError(null)
-
     const { error } = await supabase.auth.signInWithPassword({ email, password })
-
     if (error) {
       setError('Email o contraseña incorrectos. Verificá tus datos o contactá al director de tu instituto.')
       setLoading(false)
@@ -60,17 +51,14 @@ export default function LoginPage() {
     router.refresh()
   }
 
-  // ── Recuperar contraseña ──────────────────────────────────────
   async function handleForgot(e: React.FormEvent) {
     e.preventDefault()
     if (!email) { setError('Ingresá tu email primero.'); return }
     setLoading(true)
     setError(null)
-
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo: `${window.location.origin}/reset-password`,
     })
-
     setLoading(false)
     if (error) {
       setError('No se pudo enviar el email. Verificá la dirección ingresada.')
@@ -81,18 +69,14 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
-
-      {/* Gradiente sutil de fondo */}
       <div
         className="pointer-events-none fixed inset-0"
-        style={{
-          background: `radial-gradient(ellipse 80% 60% at 50% -10%, ${brandColor}10 0%, transparent 70%)`,
-        }}
+        style={{ background: `radial-gradient(ellipse 80% 60% at 50% -10%, ${brandColor}10 0%, transparent 70%)` }}
       />
 
       <div className="relative w-full max-w-[380px]">
 
-        {/* ── Header marca ── */}
+        {/* Header marca */}
         <div className="mb-8 text-center">
           <div
             className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl"
@@ -104,14 +88,10 @@ export default function LoginPage() {
               <path d="M4 13.5l10 5.5 10-5.5"/>
             </svg>
           </div>
-
-          {/* Nombre producto */}
           <p className="text-xs font-semibold tracking-widest uppercase mb-1" style={{ color: brandColor }}>
             OnGest
           </p>
           <h1 className="text-xl font-semibold text-gray-900">Plataforma de Evaluaciones</h1>
-
-          {/* Pill nombre de la institución */}
           {orgInfo?.name && (
             <div className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-white px-3 py-1">
               <span className="h-2 w-2 rounded-full flex-shrink-0" style={{ background: brandColor }} />
@@ -120,7 +100,7 @@ export default function LoginPage() {
           )}
         </div>
 
-        {/* ── Vista: Login ── */}
+        {/* Vista: Login */}
         {view === 'login' && (
           <div className="card shadow-sm">
             <form onSubmit={handleLogin} className="space-y-4">
@@ -137,7 +117,6 @@ export default function LoginPage() {
                   className="input"
                 />
               </div>
-
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <label className="label mb-0">Contraseña</label>
@@ -160,13 +139,11 @@ export default function LoginPage() {
                   className="input"
                 />
               </div>
-
               {error && (
                 <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700">
                   {error}
                 </p>
               )}
-
               <button
                 type="submit"
                 disabled={loading}
@@ -182,7 +159,7 @@ export default function LoginPage() {
           </div>
         )}
 
-        {/* ── Vista: Recuperar contraseña ── */}
+        {/* Vista: Recuperar contraseña */}
         {view === 'forgot' && (
           <div className="card shadow-sm">
             <div className="mb-4">
@@ -191,7 +168,6 @@ export default function LoginPage() {
                 Ingresá tu email y te enviamos un link para resetear tu contraseña.
               </p>
             </div>
-
             <form onSubmit={handleForgot} className="space-y-4">
               <div>
                 <label className="label">Correo electrónico</label>
@@ -206,13 +182,11 @@ export default function LoginPage() {
                   className="input"
                 />
               </div>
-
               {error && (
                 <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700">
                   {error}
                 </p>
               )}
-
               <button
                 type="submit"
                 disabled={loading}
@@ -221,7 +195,6 @@ export default function LoginPage() {
               >
                 {loading ? 'Enviando…' : 'Enviar link de recuperación'}
               </button>
-
               <button
                 type="button"
                 onClick={() => { setView('login'); setError(null) }}
@@ -233,13 +206,10 @@ export default function LoginPage() {
           </div>
         )}
 
-        {/* ── Vista: Email enviado ── */}
+        {/* Vista: Email enviado */}
         {view === 'forgot_sent' && (
           <div className="card shadow-sm text-center py-6">
-            <div
-              className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl"
-              style={{ background: '#f0fdf4' }}
-            >
+            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl" style={{ background: '#f0fdf4' }}>
               <svg viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth={1.5} className="h-6 w-6">
                 <path d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
               </svg>
@@ -248,31 +218,39 @@ export default function LoginPage() {
             <p className="text-xs text-gray-500 leading-relaxed mb-5">
               Revisá tu bandeja de entrada en <strong>{email}</strong> y seguí el link para crear una nueva contraseña.
             </p>
-            <button
-              onClick={() => { setView('login'); setError(null) }}
-              className="text-sm hover:underline"
-              style={{ color: brandColor }}
-            >
+            <button onClick={() => { setView('login'); setError(null) }} className="text-sm hover:underline" style={{ color: brandColor }}>
               ← Volver al login
             </button>
           </div>
         )}
 
-        {/* ── Footer ── */}
+        {/* Footer */}
         <div className="mt-6 text-center space-y-3">
           <p className="text-xs text-gray-400">
             ¿Problemas para acceder?{' '}
-            <a href={`mailto:${supportEmail}`} style={{ color: brandColor }}>
-              Contactar soporte
-            </a>
+            <a href={`mailto:${supportEmail}`} style={{ color: brandColor }}>Contactar soporte</a>
           </p>
           <p className="text-xs text-gray-300">
-            Powered by{' '}
-            <span className="font-medium" style={{ color: brandColor }}>OnGest</span>
+            Powered by <span className="font-medium" style={{ color: brandColor }}>OnGest</span>
           </p>
         </div>
 
       </div>
     </div>
+  )
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-10 w-10 rounded-2xl animate-pulse" style={{ background: '#642f8d' }} />
+          <p className="text-sm text-gray-400">Cargando…</p>
+        </div>
+      </div>
+    }>
+      <LoginContent />
+    </Suspense>
   )
 }

@@ -39,14 +39,12 @@ const PRIORITY_LABEL: Record<number, { label: string; color: string }> = {
 interface Props {
   studentId?:   string   // si no se pasa, usa el usuario actual
   compact?:     boolean  // modo compacto para panel docente
-  attemptId?:   string   // filtrar por intento específico
   maxItems?:    number
 }
 
 export default function RecommendationsList({
   studentId,
   compact   = false,
-  attemptId,
   maxItems  = 10,
 }: Props) {
   const supabase = createClient()
@@ -70,16 +68,13 @@ export default function RecommendationsList({
         .eq('student_id', id)
         .limit(maxItems)
 
-      if (attemptId) {
-        query = query.eq('attempt_id', attemptId)
-      }
 
       const { data } = await query
       setRecs(data ?? [])
       setLoading(false)
     }
     load()
-  }, [studentId, attemptId])
+  }, [studentId])
 
   async function markRead(id: string) {
     await supabase

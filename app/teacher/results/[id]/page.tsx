@@ -267,6 +267,15 @@ export default function GradePage({ params }: { params: Promise<{ id: string }> 
         throw new Error(`El estado no se actualizó correctamente (quedó: ${savedStatus}). Verificá permisos RLS.`)
       }
 
+      // ✅ Notificar al alumno que su examen fue corregido (fire & forget)
+      if (finalize) {
+        fetch('/api/notifications/exam-graded', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ attempt_id: attemptId }),
+        }).catch(() => {}) // No bloquear si falla
+      }
+
       setSaving(false)
 
       if (finalize) {

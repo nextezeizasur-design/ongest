@@ -1,192 +1,255 @@
-// app/results/page.tsx
 import { redirect } from 'next/navigation'
 import { getProfile } from '@/lib/auth'
-import { getStudentAttempts } from '@/services/attempts'
+import { createClient } from '@/lib/supabase/server'
 import Sidebar from '@/components/layout/Sidebar'
 import MobileNav from '@/components/layout/MobileNav'
 import TopBar from '@/components/layout/TopBar'
 import EmptyState from '@/components/ui/EmptyState'
-import { formatDateTime, formatScore, scoreColor, formatDuration } from '@/lib/utils'
+import { formatDate, daysUntil, EVAL_TYPE_LABEL } from '@/lib/utils'
+import type { Attempt } from '@/types'
 
-export const metadata = { title: 'Mis notas' }
+export const metadata = { title: 'Mis exámenes' }
 
-export default async function ResultsPage() {
+export default async function ExamListPage() {
   const profile = await getProfile()
   if (!profile) redirect('/login')
-  if (profile.role !== 'student') redirect('/')
+  if (!['student'].includes(profile.role)) {
+    const home: Record<string, string> = {
+      director:    '/director',
+      coordinator: '/coordinator',
+      secretary:   '/secretary',
+      teacher:     '/teacher',
+    }
+    redirect(home[profile.role] ?? '/teacher')
+  }
+  const supabase = await createClient()
 
-  const { data: attempts } = await getStudentAttempts(profile.id)
+  const { data: enrollment } = await supabase
+    .from('enrollments')
+    .select('courses(id, name, cefr_levels(code, label), schedule_days, schedule_time)')
+    .eq('student_id', profile.id)
+    .maybeSingle()
 
-  // ✅ Solo los intentos con corrección final del docente entran al promedio
-  // submitted = entregado pero sin nota definitiva aún → NO entra al promedio
-  // graded    = corregido por el docente → SÍ entra al promedio
-  const graded    = attempts.filter(a => a.status === 'graded')
-  const submitted = attempts.filter(a => a.status === 'submitted')
-  const timedOut  = attempts.filter(a => a.status === 'timed_out')
+  const studentCourse = (enrollment as any)?.courses ?? null
 
-  // Para la lista mostramos: graded + submitted + timed_out, ordenados por fecha
-  const allShown = [...graded, ...submitted, ...timedOut]
-    .sort((a, b) => new Date(b.started_at).getTime() - new Date(a.started_at).getTime())
+  const { data: enrollments } = await supabase
+    .from('enrollments')
+    .select('course_id')
+    .eq('student_id', profile.id)
 
-  // Promedio SOLO sobre graded con score real
-  const gradedWithScore = graded.filter(a => a.score != null)
-  const avgScore = gradedWithScore.length
-    ? Math.round(
-        gradedWithScore.reduce((acc, b) => acc + (b.score ?? 0), 0) /
-        gradedWithScore.length
-      )
-    : null
+  const courseIds = (enrollments ?? []).map(e => e.course_id)
+
+  let evaluations: any[] = []
+  if (courseIds.length > 0) {
+    const { data } = await supabase
+      .from('evaluation_courses')
+      .select('evaluation_id, evaluations!inner(*, cefr_levels(code, label))')
+      .in('course_id', courseIds)
+      .eq('evaluations.status', 'published')
+    evaluations = (data ?? []).map(r => r.evaluations)
+  }
+
+  const { data: attemptsData } = await supabase
+    .from('attempts')
+    .select('*')
+    .eq('student_id', profile.id)
+
+  const byEval: Record<string, Attempt[]> = {}
+  ;(attemptsData ?? []).forEach((a: any) => {
+    if (!byEval[a.evaluation_id]) byEval[a.evaluation_id] = []
+    byEval[a.evaluation_id].push(a)
+  })
+
+  const now = new Date()
+
+  // ✅ Regla: 1 intento por evaluación.
+  // Si ya hay cualquier intento completado → se oculta de "Mis exámenes" y pasa a "Mis notas"
+  // Solo aparece aquí si: no tiene intentos (puede comenzar) o tiene uno in_progress (puede continuar)
+  const pendingEvaluations = evaluations.filter((ev: any) => {
+    const attempts   = byEval[ev.id] ?? []
+    const inProgress = attempts.find(a => a.status === 'in_progress')
+    const completed  = attempts.filter(a =>
+      ['submitted', 'graded', 'timed_out', 'flagged'].includes(a.status)
+    )
+
+    if (inProgress) return true
+    if (completed.length > 0) return false
+    return true
+  })
 
   return (
     <div className="flex h-screen overflow-hidden bg-gray-50">
 
-      {/* Sidebar — solo desktop */}
       <div className="hidden md:block">
-        <Sidebar
-          role="student"
-          name={`${profile.first_name} ${profile.last_name}`}
-          email={profile.email}
-        />
+        <Sidebar role="student" name={`${profile.first_name} ${profile.last_name}`} email={profile.email} />
       </div>
 
       <div className="flex flex-1 flex-col overflow-hidden min-w-0">
         <TopBar
-          title="Mis notas"
-          subtitle={`${graded.length} evaluación${graded.length !== 1 ? 'es' : ''} corregida${graded.length !== 1 ? 's' : ''}`}
+          title="Mis exámenes"
+          subtitle={`${pendingEvaluations.length} disponible${pendingEvaluations.length !== 1 ? 's' : ''}`}
         />
 
-        <main className="flex-1 overflow-y-auto p-4 md:p-6 pb-20 md:pb-6 space-y-4 md:space-y-5 max-w-3xl mx-auto w-full">
+        <main className="flex-1 overflow-y-auto p-4 md:p-6 pb-20 md:pb-6 space-y-4">
 
-          {/* ── Stats rápidas — solo si hay al menos 1 graded ── */}
-          {graded.length > 0 && (
-            <div className="grid grid-cols-3 gap-3 md:gap-4">
-              <div className="card-sm text-center">
-                <p className="text-xl md:text-2xl font-semibold text-gray-900">{graded.length}</p>
-                <p className="text-xs text-gray-500">Corregidas</p>
+          {/* Curso asignado */}
+          {studentCourse && (
+            <div className="card flex items-center gap-3 md:gap-4">
+              <div
+                className="flex h-10 w-10 md:h-12 md:w-12 flex-shrink-0 items-center justify-center rounded-xl"
+                style={{ background: '#f5eefb' }}
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="#642f8d" strokeWidth={1.5} className="h-5 w-5 md:h-6 md:w-6">
+                  <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+                  <path d="M2 17l10 5 10-5M2 12l10 5 10-5"/>
+                </svg>
               </div>
-              <div className="card-sm text-center">
-                <p className={`text-xl md:text-2xl font-semibold ${scoreColor(avgScore)}`}>
-                  {formatScore(avgScore)}
-                </p>
-                <p className="text-xs text-gray-500">Promedio</p>
-              </div>
-              <div className="card-sm text-center">
-                <p className="text-xl md:text-2xl font-semibold text-green-700">
-                  {graded.filter(a => a.passed).length}
-                </p>
-                <p className="text-xs text-gray-500">Aprobadas</p>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className="font-semibold text-gray-900 text-sm md:text-base">{studentCourse.name}</p>
+                  {studentCourse.cefr_levels && (
+                    <span className={`cefr-pill cefr-${studentCourse.cefr_levels.code}`}>
+                      {studentCourse.cefr_levels.code}
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                  {studentCourse.schedule_days && (
+                    <span className="text-xs text-gray-500">📅 {studentCourse.schedule_days}</span>
+                  )}
+                  {studentCourse.schedule_time && (
+                    <span className="text-xs text-gray-500">🕐 {studentCourse.schedule_time}</span>
+                  )}
+                </div>
               </div>
             </div>
           )}
 
-          {/* Banner informativo si hay submitted pendientes */}
-          {submitted.length > 0 && (
-            <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
-              <span className="text-lg">⏳</span>
-              <div>
-                <p className="text-sm font-semibold text-amber-800">
-                  {submitted.length} examen{submitted.length !== 1 ? 'es' : ''} pendiente{submitted.length !== 1 ? 's' : ''} de corrección
-                </p>
-                <p className="text-xs text-amber-700 mt-0.5">
-                  El promedio se actualiza cuando el docente termina de corregir.
-                </p>
-              </div>
-            </div>
-          )}
-
-          {/* ── Lista de intentos ── */}
-          {allShown.length === 0 ? (
+          {pendingEvaluations.length === 0 ? (
             <EmptyState
-              title="Sin resultados aún"
-              description="Completá tu primer examen para ver tus notas aquí."
+              title="No hay exámenes pendientes"
+              description="Todos tus exámenes fueron entregados. Revisá el estado en 'Mis notas'."
             />
           ) : (
-            <div className="space-y-3">
-              {allShown.map(attempt => {
-                const ev = (attempt as any).evaluations
-                const isPending   = attempt.status === 'submitted'
-                const isTimedOut  = attempt.status === 'timed_out'
+            <div className="space-y-3 md:max-w-2xl md:mx-auto">
+              {pendingEvaluations.map((ev: any) => {
+                const attempts   = byEval[ev.id] ?? []
+                const inProgress = attempts.find(a => a.status === 'in_progress')
+                const isExpired  = ev.available_until && new Date(ev.available_until) < now
+                const days       = daysUntil(ev.available_until)
 
                 return (
-                  // ✅ Card clickeable → detalle de respuestas y feedback
-                  <a
-                    key={attempt.id}
-                    href={`/exam/results/${attempt.id}`}
-                    className="card flex items-center gap-3 md:gap-4 hover:shadow-md transition-shadow group"
+                  <div
+                    key={ev.id}
+                    className={`card transition-shadow hover:shadow-sm ${isExpired ? 'opacity-60' : ''}`}
                   >
-                    {/* Ícono resultado */}
-                    <div
-                      className="flex h-11 w-11 md:h-12 md:w-12 flex-shrink-0 items-center justify-center rounded-xl text-white font-bold text-lg"
-                      style={{
-                        background: isTimedOut
-                          ? '#6b7280'
-                          : isPending
-                            ? '#d97706'
-                            : attempt.passed ? '#16a34a' : '#dc2626'
-                      }}
-                    >
-                      {isTimedOut ? '⏰' : isPending ? '⏳' : attempt.passed ? '✓' : '✕'}
-                    </div>
+                    <div className="flex items-start gap-3 md:items-center md:gap-4">
 
-                    {/* Contenido */}
-                    <div className="min-w-0 flex-1">
-                      <p className="font-semibold text-gray-900 truncate text-sm md:text-base">
-                        {ev?.title ?? 'Evaluación'}
-                      </p>
-                      <div className="flex flex-wrap items-center gap-2 md:gap-3 mt-1 text-xs text-gray-400">
-                        <span>{formatDateTime(attempt.submitted_at)}</span>
-                        {attempt.time_taken_sec && (
-                          <span>⏱ {formatDuration(attempt.time_taken_sec)}</span>
-                        )}
-                        {!isPending && !isTimedOut && (
-                          <span className={`font-medium ${scoreColor(attempt.score)}`}>
-                            {formatScore(attempt.score)}
-                          </span>
+                      {/* Icono */}
+                      <div
+                        className="flex h-10 w-10 md:h-12 md:w-12 flex-shrink-0 items-center justify-center rounded-xl text-white"
+                        style={{ background: isExpired ? '#9ca3af' : '#642f8d' }}
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} className="h-5 w-5 md:h-6 md:w-6">
+                          <rect x="4" y="2" width="16" height="20" rx="2"/>
+                          <path d="M9 7h6M9 11h4M9 15h3"/>
+                        </svg>
+                      </div>
+
+                      {/* Contenido */}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-1.5 md:gap-2">
+                          <h3 className="text-sm md:text-base font-semibold text-gray-900 w-full md:w-auto">
+                            {ev.title}
+                          </h3>
+                          <div className="flex flex-wrap gap-1.5">
+                            {ev.cefr_levels && (
+                              <span className={`cefr-pill cefr-${ev.cefr_levels.code}`}>{ev.cefr_levels.code}</span>
+                            )}
+                            <span className="badge badge-gray text-xs">{EVAL_TYPE_LABEL[ev.eval_type]}</span>
+                          </div>
+                        </div>
+
+                        {/* Métricas */}
+                        <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-gray-400">
+                          {ev.time_limit_min && <span>⏱ {ev.time_limit_min} min</span>}
+                          {!isExpired && days !== null && (
+                            <span className={days <= 2 ? 'font-semibold text-red-600' : ''}>
+                              {days === 0 ? '⚠ Vence hoy' : `Vence en ${days}d`}
+                            </span>
+                          )}
+                          {isExpired && <span>Cerrado · {formatDate(ev.available_until)}</span>}
+                        </div>
+
+                        {/* Botón mobile */}
+                        <div className="mt-3 md:hidden">
+                          {isExpired ? (
+                            <span className="badge badge-gray">Cerrado</span>
+                          ) : (
+                            <a
+                              href={ev.is_adaptive ? `/exam/adaptive/${ev.id}` : `/exam/${ev.id}`}
+                              className="inline-flex items-center justify-center w-full py-2.5 text-sm font-semibold text-white rounded-xl hover:opacity-90 transition-opacity"
+                              style={{ backgroundColor: '#642f8d' }}
+                            >
+                              {inProgress ? 'Continuar →' : 'Comenzar →'}
+                            </a>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Botón desktop */}
+                      <div className="hidden md:block flex-shrink-0">
+                        {isExpired ? (
+                          <span className="badge badge-gray">Cerrado</span>
+                        ) : (
+                          <a
+                            href={ev.is_adaptive ? `/exam/adaptive/${ev.id}` : `/exam/${ev.id}`}
+                            className="btn-brand"
+                          >
+                            {inProgress ? 'Continuar →' : 'Comenzar →'}
+                          </a>
                         )}
                       </div>
-                      {/* Feedback del docente — preview */}
-                      {attempt.teacher_feedback && (
-                        <p className="mt-1.5 text-xs text-blue-700 bg-blue-50 border border-blue-100 rounded px-2 py-1 truncate">
-                          💬 {attempt.teacher_feedback}
-                        </p>
-                      )}
-                      {isPending && (
-                        <p className="mt-1 text-xs text-amber-600">
-                          ⏳ Pendiente de corrección por el docente
-                        </p>
-                      )}
-                      {isTimedOut && (
-                        <p className="mt-1 text-xs text-gray-500">
-                          ⏰ El tiempo se agotó antes de completar el examen
-                        </p>
-                      )}
                     </div>
-
-                    {/* Badge + flecha */}
-                    <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
-                      <span className={`badge ${
-                        isTimedOut
-                          ? 'badge-gray'
-                          : isPending
-                            ? 'badge-amber'
-                            : attempt.passed ? 'badge-green' : 'badge-red'
-                      }`}>
-                        {isTimedOut ? 'Tiempo agotado' : isPending ? 'Pendiente' : attempt.passed ? 'Aprobado' : 'Desaprobado'}
-                      </span>
-                      <span className="text-xs text-gray-400 group-hover:text-purple-600 transition-colors">
-                        Ver detalle →
-                      </span>
-                    </div>
-                  </a>
+                  </div>
                 )
               })}
+            </div>
+          )}
+
+          {/* Enlace a Mis notas si hay exámenes ya entregados */}
+          {evaluations.length > pendingEvaluations.length && (
+            <div className="md:max-w-2xl md:mx-auto">
+              <a
+                href="/results"
+                className="flex items-center justify-between w-full card hover:shadow-sm transition-shadow group"
+              >
+                <div className="flex items-center gap-3">
+                  <div
+                    className="flex h-9 w-9 items-center justify-center rounded-xl"
+                    style={{ background: '#f5eefb' }}
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="#642f8d" strokeWidth={1.5} className="h-5 w-5">
+                      <path d="M9 12l2 2 4-4M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900">
+                      {evaluations.length - pendingEvaluations.length} examen{evaluations.length - pendingEvaluations.length !== 1 ? 'es' : ''} entregado{evaluations.length - pendingEvaluations.length !== 1 ? 's' : ''}
+                    </p>
+                    <p className="text-xs text-gray-400">Ver estado y notas en Mis notas</p>
+                  </div>
+                </div>
+                <span className="text-purple-600 text-sm group-hover:translate-x-1 transition-transform">
+                  Ver notas →
+                </span>
+              </a>
             </div>
           )}
 
         </main>
       </div>
 
-      {/* ✅ MobileNav — navegación inferior en mobile */}
       <MobileNav />
     </div>
   )

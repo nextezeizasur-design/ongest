@@ -13,7 +13,23 @@ interface OrgInfo {
 
 type View = 'login' | 'forgot' | 'forgot_sent'
 
-function LoginContent() {
+// Suspense solo envuelve este componente pequeño que usa useSearchParams
+function OrgLoader({ onLoad }: { onLoad: (org: OrgInfo) => void }) {
+  const searchParams = useSearchParams()
+
+  useEffect(() => {
+    const slug = searchParams.get('org')
+    if (!slug) return
+    fetch(`/api/org?slug=${encodeURIComponent(slug)}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (data) onLoad(data) })
+      .catch(() => {})
+  }, [searchParams, onLoad])
+
+  return null
+}
+
+export default function LoginPage() {
   const [email,    setEmail]    = useState('')
   const [password, setPassword] = useState('')
   const [error,    setError]    = useState<string | null>(null)
@@ -21,18 +37,8 @@ function LoginContent() {
   const [view,     setView]     = useState<View>('login')
   const [orgInfo,  setOrgInfo]  = useState<OrgInfo | null>(null)
 
-  const router       = useRouter()
-  const searchParams = useSearchParams()
-  const supabase     = createClient()
-
-  useEffect(() => {
-    const slug = searchParams.get('org')
-    if (!slug) return
-    fetch(`/api/org?slug=${encodeURIComponent(slug)}`)
-      .then(r => r.ok ? r.json() : null)
-      .then(data => { if (data) setOrgInfo(data) })
-      .catch(() => {})
-  }, [searchParams])
+  const router   = useRouter()
+  const supabase = createClient()
 
   const brandColor   = orgInfo?.primaryColor ?? '#642f8d'
   const supportEmail = orgInfo?.supportEmail ?? 'soporte@ongest.app'
@@ -69,12 +75,18 @@ function LoginContent() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
+
+      {/* OrgLoader usa useSearchParams — Suspense solo lo envuelve a él */}
+      <Suspense fallback={null}>
+        <OrgLoader onLoad={setOrgInfo} />
+      </Suspense>
+
       <div
         className="pointer-events-none fixed inset-0"
         style={{ background: `radial-gradient(ellipse 80% 60% at 50% -10%, ${brandColor}10 0%, transparent 70%)` }}
       />
 
-      <div className="relative w-full max-w-[380px]">
+      <div className="relative w-full max-w-[380px] animate-fade-up">
 
         {/* Header marca */}
         <div className="mb-8 text-center">
@@ -237,20 +249,5 @@ function LoginContent() {
 
       </div>
     </div>
-  )
-}
-
-export default function LoginPage() {
-  return (
-    <Suspense fallback={
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="flex flex-col items-center gap-3">
-          <div className="h-10 w-10 rounded-2xl animate-pulse" style={{ background: '#642f8d' }} />
-          <p className="text-sm text-gray-400">Cargando…</p>
-        </div>
-      </div>
-    }>
-      <LoginContent />
-    </Suspense>
   )
 }

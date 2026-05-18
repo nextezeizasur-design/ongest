@@ -4,10 +4,7 @@ import { useState, useEffect, useCallback, useRef, use } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import ExamAssetViewer from '@/components/shared/ExamAssetViewer'
-import StudentRadarCard from '@/components/shared/StudentRadarCard'
-import RecommendationsList from '@/components/shared/RecommendationsList'
 import SpeakingQuestion from '@/components/shared/SpeakingQuestion'
-import CertificateCard from '@/components/shared/CertificateCard'
 import { ToastProvider, useToast } from '@/components/shared/Toast'
 import { useConfirm } from '@/hooks/useConfirm'
 
@@ -58,14 +55,8 @@ function qTypeLabel(q_type: string): { label: string; color: string } {
   return map[q_type] ?? { label: q_type, color: 'bg-gray-100 text-gray-600' }
 }
 
-type Phase = 'instructions' | 'exam' | 'result'
+type Phase = 'instructions' | 'exam'
 
-interface ResultData {
-  score: number
-  passed: boolean
-  total_points: number
-  earned_points: number
-}
 
 export default function ExamPageWrapper({ params }: { params: Promise<{ id: string }> }) {
   return (
@@ -91,7 +82,6 @@ function ExamPage({ params }: { params: Promise<{ id: string }> }) {
   const [warnings, setWarnings]     = useState(0)
   const [showWarn, setShowWarn]     = useState(false)
   const [warnMsg, setWarnMsg]       = useState('')
-  const [result, setResult]         = useState<ResultData | null>(null)
   const [loading, setLoading]       = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [userId, setUserId]         = useState<string>('')
@@ -312,15 +302,6 @@ function ExamPage({ params }: { params: Promise<{ id: string }> }) {
         p_attempt_id: att.id,
       })
 
-      if (gradeData) {
-        setResult({
-          score:         gradeData.score          ?? 0,
-          passed:        gradeData.passed         ?? false,
-          total_points:  gradeData.total_points   ?? 0,
-          earned_points: gradeData.earned_points  ?? 0,
-        })
-      }
-
       // Generar recomendaciones automáticas (fire & forget)
       fetch('/api/recommendations/generate', {
         method:  'POST',
@@ -335,8 +316,8 @@ function ExamPage({ params }: { params: Promise<{ id: string }> }) {
         body:    JSON.stringify({ attempt_id: att.id }),
       }).catch(() => {})
 
-      setPhase('result')
-      phaseRef.current = 'result'
+      router.push('/results')
+
     } catch (err) {
       console.error('Error al entregar examen:', err)
       submittedRef.current = false
@@ -539,93 +520,6 @@ function ExamPage({ params }: { params: Promise<{ id: string }> }) {
             style={{ backgroundColor: '#642f8d' }}
           >
             Comenzar examen
-          </button>
-        </div>
-      </div>
-    )
-  }
-
-  // ── RESULTADO ──
-  if (phase === 'result') {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-        <div className="bg-white rounded-2xl shadow-lg max-w-md w-full p-8 text-center">
-          <div className="text-6xl mb-4">{result?.passed ? '🎉' : '📚'}</div>
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">
-            {result?.passed ? '¡Felicitaciones!' : 'Examen completado'}
-          </h1>
-          <p className="text-gray-500 mb-8">
-            {result?.passed ? 'Aprobaste la evaluación.' : 'No alcanzaste el puntaje mínimo esta vez.'}
-          </p>
-
-          {result && (
-            <div className="bg-gray-50 rounded-xl p-6 mb-6">
-              <div className="text-5xl font-bold mb-2" style={{ color: result.passed ? '#16a34a' : '#dc2626' }}>
-                {Math.round(result.score)}%
-              </div>
-              <p className="text-sm text-gray-500">{result.earned_points} / {result.total_points} puntos</p>
-              {exam.pass_score && (
-                <p className="text-sm text-gray-400 mt-1">Puntaje mínimo: {exam.pass_score}%</p>
-              )}
-            </div>
-          )}
-
-          {/* Certificado si aprobó */}
-          {result?.passed && attempt && userId && (
-            <div className="mb-4">
-              <CertificateCard
-                studentId={userId}
-                attemptId={attempt.id}
-              />
-            </div>
-          )}
-
-          {/* Radar compacto */}
-          {userId && (
-            <div className="mb-6 p-4 bg-gray-50 rounded-xl text-left">
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
-                Tu radar de habilidades
-              </p>
-              <StudentRadarCard
-                studentId={userId}
-                studentName="Tu rendimiento acumulado"
-                compact={true}
-              />
-              <a
-                href="/results/radar"
-                className="block text-center text-xs text-purple-600 hover:underline mt-3"
-              >
-                Ver radar completo →
-              </a>
-            </div>
-          )}
-
-          {/* Recomendaciones automáticas */}
-          {attempt && (
-            <div className="mb-6 text-left">
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
-                Recomendaciones para vos
-              </p>
-              <RecommendationsList
-                attemptId={attempt.id}
-                compact={true}
-                maxItems={3}
-              />
-              <a
-                href="/results/recommendations"
-                className="block text-center text-xs text-purple-600 hover:underline mt-3"
-              >
-                Ver todas mis recomendaciones →
-              </a>
-            </div>
-          )}
-
-          <button
-            onClick={() => router.push('/exam')}
-            className="w-full py-3 text-white font-semibold rounded-xl transition-opacity hover:opacity-90"
-            style={{ backgroundColor: '#642f8d' }}
-          >
-            Ver mis evaluaciones
           </button>
         </div>
       </div>

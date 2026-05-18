@@ -17,19 +17,23 @@ export default async function ResultsPage() {
 
   const { data: attempts } = await getStudentAttempts(profile.id)
 
-  // ✅ timed_out se muestra al alumno pero NO entra en el promedio
-  // El promedio solo considera intentos con score real (submitted/graded)
-  const done      = attempts.filter(a => ['submitted', 'graded'].includes(a.status))
+  // ✅ Solo los intentos con corrección final del docente entran al promedio
+  // submitted = entregado pero sin nota definitiva aún → NO entra al promedio
+  // graded    = corregido por el docente → SÍ entra al promedio
+  const graded    = attempts.filter(a => a.status === 'graded')
+  const submitted = attempts.filter(a => a.status === 'submitted')
   const timedOut  = attempts.filter(a => a.status === 'timed_out')
-  const allShown  = [...done, ...timedOut]
+
+  // Para la lista mostramos: graded + submitted + timed_out, ordenados por fecha
+  const allShown = [...graded, ...submitted, ...timedOut]
     .sort((a, b) => new Date(b.started_at).getTime() - new Date(a.started_at).getTime())
 
-  const avgScore = done.filter(a => a.score != null).length
+  // Promedio SOLO sobre graded con score real
+  const gradedWithScore = graded.filter(a => a.score != null)
+  const avgScore = gradedWithScore.length
     ? Math.round(
-        done
-          .filter(a => a.score != null)
-          .reduce((acc, b) => acc + (b.score ?? 0), 0) /
-        done.filter(a => a.score != null).length
+        gradedWithScore.reduce((acc, b) => acc + (b.score ?? 0), 0) /
+        gradedWithScore.length
       )
     : null
 
@@ -48,17 +52,17 @@ export default async function ResultsPage() {
       <div className="flex flex-1 flex-col overflow-hidden min-w-0">
         <TopBar
           title="Mis notas"
-          subtitle={`${done.length} evaluación${done.length !== 1 ? 'es' : ''} completada${done.length !== 1 ? 's' : ''}`}
+          subtitle={`${graded.length} evaluación${graded.length !== 1 ? 'es' : ''} corregida${graded.length !== 1 ? 's' : ''}`}
         />
 
         <main className="flex-1 overflow-y-auto p-4 md:p-6 pb-20 md:pb-6 space-y-4 md:space-y-5 max-w-3xl mx-auto w-full">
 
-          {/* ── Stats rápidas ── */}
-          {done.length > 0 && (
+          {/* ── Stats rápidas — solo si hay al menos 1 graded ── */}
+          {graded.length > 0 && (
             <div className="grid grid-cols-3 gap-3 md:gap-4">
               <div className="card-sm text-center">
-                <p className="text-xl md:text-2xl font-semibold text-gray-900">{done.length}</p>
-                <p className="text-xs text-gray-500">Completadas</p>
+                <p className="text-xl md:text-2xl font-semibold text-gray-900">{graded.length}</p>
+                <p className="text-xs text-gray-500">Corregidas</p>
               </div>
               <div className="card-sm text-center">
                 <p className={`text-xl md:text-2xl font-semibold ${scoreColor(avgScore)}`}>
@@ -68,9 +72,24 @@ export default async function ResultsPage() {
               </div>
               <div className="card-sm text-center">
                 <p className="text-xl md:text-2xl font-semibold text-green-700">
-                  {done.filter(a => a.passed).length}
+                  {graded.filter(a => a.passed).length}
                 </p>
                 <p className="text-xs text-gray-500">Aprobadas</p>
+              </div>
+            </div>
+          )}
+
+          {/* Banner informativo si hay submitted pendientes */}
+          {submitted.length > 0 && (
+            <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+              <span className="text-lg">⏳</span>
+              <div>
+                <p className="text-sm font-semibold text-amber-800">
+                  {submitted.length} examen{submitted.length !== 1 ? 'es' : ''} pendiente{submitted.length !== 1 ? 's' : ''} de corrección
+                </p>
+                <p className="text-xs text-amber-700 mt-0.5">
+                  El promedio se actualiza cuando el docente termina de corregir.
+                </p>
               </div>
             </div>
           )}

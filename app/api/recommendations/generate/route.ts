@@ -11,16 +11,6 @@ export async function POST(req: NextRequest) {
     const supabase = await createClient()
     const sb = supabase as any
 
-    // ── Verificar si ya hay recomendaciones para este intento ──────────────
-    const { count } = await sb
-      .from('student_recommendations')           // ✅ nombre correcto
-      .select('id', { count: 'exact', head: true })
-      .eq('attempt_id', attempt_id)
-
-    if ((count ?? 0) > 0) {
-      return NextResponse.json({ skipped: true, reason: 'already_exists' })
-    }
-
     // ── Obtener datos del intento ──────────────────────────────────────────
     const { data: attempt } = await sb
       .from('attempts')
@@ -31,7 +21,6 @@ export async function POST(req: NextRequest) {
     if (!attempt) return NextResponse.json({ error: 'attempt not found' }, { status: 404 })
 
     // ── Obtener respuestas con is_correct y skill de la pregunta ──────────
-    // Una sola query — sin N+1 loops de options
     const { data: answers } = await sb
       .from('answers')
       .select(`
@@ -42,24 +31,18 @@ export async function POST(req: NextRequest) {
       .eq('attempt_id', attempt_id)
 
     // ── Calcular rendimiento por skill ────────────────────────────────────
-    // Usamos questions.skill si existe, sino fallback a q_type como categoría
     const skillScores: Record<string, { earned: number; total: number }> = {}
 
     for (const answer of (answers ?? [])) {
       const q = answer.questions
       if (!q) continue
-
-      // Usar skill semántico si existe (grammar, vocabulary, speaking…)
-      // Si la pregunta no tiene skill definido, usar q_type como fallback
       const skill = q.skill?.trim() || q.q_type
-
       if (!skillScores[skill]) skillScores[skill] = { earned: 0, total: 0 }
       skillScores[skill].total  += q.points ?? 1
       skillScores[skill].earned += answer.points_earned ?? 0
     }
 
     // ── Buscar reglas de recomendación aplicables ─────────────────────────
-    // Primero intentamos usar recommendation_rules si existen
     const { data: rules } = await sb
       .from('recommendation_rules')
       .select('*')
@@ -71,53 +54,73 @@ export async function POST(req: NextRequest) {
       rulesMap[rule.skill].push(rule)
     }
 
-    // ── Generar recomendaciones para skills con < 60% ─────────────────────
-    const recommendations: any[] = []
+    // ── Recomendaciones existentes del alumno (para comparar scores) ──────
+    // Solo miramos skills con score < 60% en este intento
+    const weakSkills = Object.entries(skillScores)
+      .filter(([_, data]) => data.total > 0 && Math.round((data.earned / data.total) * 100) < 60)
+      .map(([skill]) => skill)
+
+    let existingRecs: Record<string, any> = {}
+    if (weakSkills.length > 0) {
+      const { data: existing } = await sb
+        .from('student_recommendations')
+        .select('id, skill, score_pct, is_dismissed')
+        .eq('student_id', attempt.student_id)
+        .in('skill', weakSkills)
+
+      for (const rec of (existing ?? [])) {
+        existingRecs[rec.skill] = rec
+      }
+    }
+
+    // ── Generar upserts por student_id+skill ──────────────────────────────
+    // Regla: 1 recomendación por alumno por skill.
+    // Si ya existe y el nuevo score es PEOR → actualizar (el alumno sigue fallando)
+    // Si ya existe y el nuevo score es MEJOR o igual → no tocar (no spamear)
+    // Si no existe → crear
+    const toUpsert: any[] = []
 
     for (const [skill, data] of Object.entries(skillScores)) {
       if (data.total === 0) continue
       const pct = Math.round((data.earned / data.total) * 100)
       if (pct >= 60) continue  // skill OK, no recomendar
 
-      // Buscar regla específica para este skill y nivel de score
+      const existing = existingRecs[skill]
+
+      // Si ya existe una rec activa (no descartada) con score igual o peor → no actualizar
+      if (existing && !existing.is_dismissed && existing.score_pct <= pct) continue
+
+      // Buscar regla específica para este skill
       const skillRules = (rulesMap[skill] ?? [])
         .filter((r: any) => pct <= r.threshold_pct)
         .sort((a: any, b: any) => b.priority - a.priority)
 
-      if (skillRules.length > 0) {
-        // Usar la regla más prioritaria
-        const rule = skillRules[0]
-        recommendations.push({
-          attempt_id,
-          student_id:    attempt.student_id,
-          evaluation_id: attempt.evaluation_id,
-          rule_id:       rule.id,
-          skill,
-          score_pct:     pct,
-        })
-      } else {
-        // Sin regla específica → generar recomendación genérica
-        recommendations.push({
-          attempt_id,
-          student_id:    attempt.student_id,
-          evaluation_id: attempt.evaluation_id,
-          rule_id:       null,
-          skill,
-          score_pct:     pct,
-        })
-      }
+      toUpsert.push({
+        student_id:    attempt.student_id,
+        attempt_id,
+        evaluation_id: attempt.evaluation_id,
+        rule_id:       skillRules[0]?.id ?? null,
+        skill,
+        score_pct:     pct,
+        is_read:       false,       // resetear como no leída al actualizarse
+        is_dismissed:  false,
+        updated_at:    new Date().toISOString(),
+      })
     }
 
-    if (recommendations.length === 0) {
-      return NextResponse.json({ created: 0 })
+    if (toUpsert.length === 0) {
+      return NextResponse.json({ created: 0, message: 'no new weak skills or no improvements needed' })
     }
 
-    // ── Insertar en student_recommendations ───────────────────────────────
+    // ── Upsert por student_id+skill ───────────────────────────────────────
+    // onConflict apunta al nuevo constraint student_recommendations_student_skill_unique
+    // que solo aplica cuando is_dismissed = false
+    // Para filas descartadas (is_dismissed=true) no hay conflicto → se insertan nuevas
     const { data: inserted, error } = await sb
-      .from('student_recommendations')           // ✅ nombre correcto
-      .upsert(recommendations, {
-        onConflict:       'attempt_id,skill',    // constraint que acabamos de crear
-        ignoreDuplicates: true,
+      .from('student_recommendations')
+      .upsert(toUpsert, {
+        onConflict:       'student_id,skill',
+        ignoreDuplicates: false,  // queremos actualizar, no ignorar
       })
       .select('id')
 

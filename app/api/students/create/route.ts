@@ -43,19 +43,18 @@ export async function POST(request: NextRequest) {
       { cookies: { getAll() { return [] }, setAll() {} } }
     )
 
-    // Generar contraseña temporal segura
-    const tempPassword = Math.random().toString(36).slice(2, 10) + 'Aa1!'
-
-    // Crear usuario en Auth
-    const { data: newUser, error: authError } = await (adminSupabase as any).auth.admin.createUser({
+    // ✅ Opción A: invite por email — el alumno elige su propia contraseña
+    // Supabase envía el email de bienvenida automáticamente
+    const { data: inviteData, error: authError } = await (adminSupabase as any).auth.admin.generateLink({
+      type:  'invite',
       email: email.trim().toLowerCase(),
-      password: tempPassword,
-      email_confirm: true, // confirmar email automáticamente
-      user_metadata: {
-        first_name: first_name.trim(),
-        last_name:  last_name.trim(),
-        role_id:    4, // student
-        organization_id: organization_id,
+      options: {
+        data: {
+          first_name:      first_name.trim(),
+          last_name:       last_name.trim(),
+          role_id:         4,
+          organization_id: organization_id,
+        },
       },
     })
 
@@ -65,6 +64,8 @@ export async function POST(request: NextRequest) {
       }
       return NextResponse.json({ error: authError.message }, { status: 400 })
     }
+
+    const newUser = inviteData?.user ?? inviteData
 
     // Actualizar perfil con datos adicionales (el trigger ya lo creó)
     await (adminSupabase as any).from('profiles').update({
@@ -88,9 +89,9 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      user_id: newUser.user.id,
-      temp_password: tempPassword,
-      message: `Alumno creado. Contraseña temporal: ${tempPassword}`,
+      user_id: newUser?.id ?? newUser?.user?.id,
+      invited: true,
+      message: `Alumno creado. Se envió un email de bienvenida a ${email}.`,
     })
 
   } catch (err: any) {

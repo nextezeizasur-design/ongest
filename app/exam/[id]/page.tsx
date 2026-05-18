@@ -79,6 +79,7 @@ function ExamPage({ params }: { params: Promise<{ id: string }> }) {
   const [phase, setPhase]           = useState<Phase>('instructions')
   const [currentQ, setCurrentQ]     = useState(0)
   const [timeLeft, setTimeLeft]     = useState<number | null>(null)
+  const [localTime, setLocalTime]   = useState<string>('')
   const [warnings, setWarnings]     = useState(0)
   const [showWarn, setShowWarn]     = useState(false)
   const [warnMsg, setWarnMsg]       = useState('')
@@ -245,6 +246,17 @@ function ExamPage({ params }: { params: Promise<{ id: string }> }) {
 
     loadExam()
   }, [examId])
+
+  // ── Reloj hora local ──
+  useEffect(() => {
+    function tick() {
+      const now = new Date()
+      setLocalTime(now.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }))
+    }
+    tick()
+    const interval = setInterval(tick, 30_000)
+    return () => clearInterval(interval)
+  }, [])
 
   // ── Timer — sincronizado con DB ──
   useEffect(() => {
@@ -565,6 +577,12 @@ function ExamPage({ params }: { params: Promise<{ id: string }> }) {
         </div>
         <div className="flex items-center gap-2 md:gap-4 flex-shrink-0">
           <span className="text-xs text-gray-500 hidden sm:inline">{answered}/{total} respondidas</span>
+          {/* ✅ Hora local — ayuda al alumno a manejar el tiempo real */}
+          {localTime && (
+            <span className="hidden sm:inline text-xs text-gray-400 font-mono">
+              🕐 {localTime}
+            </span>
+          )}
           {timeLeft !== null && (
             <span className={`font-mono font-bold text-xs md:text-sm px-2 md:px-3 py-1 rounded-lg ${
               isLowTime ? 'bg-red-100 text-red-700 animate-pulse' : 'bg-gray-100 text-gray-700'

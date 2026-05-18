@@ -308,7 +308,20 @@ export default function NewEvaluationPage() {
           <button onClick={() => handleSave('draft')} disabled={saving} className="btn-outline">
             Guardar borrador
           </button>
-          <button onClick={() => handleSave('published')} disabled={saving} className="btn-brand">
+          <button
+            onClick={async () => {
+              const ok = await confirm({
+                title:       'Publicar evaluación',
+                message:     `¿Publicar "${title || 'esta evaluación'}"? Los alumnos asignados podrán verla y rendir el examen de inmediato.`,
+                confirmText: 'Sí, publicar',
+                cancelText:  'Revisar primero',
+                variant:     'warning',
+              })
+              if (ok) handleSave('published')
+            }}
+            disabled={saving}
+            className="btn-brand"
+          >
             {saving ? 'Guardando…' : 'Publicar evaluación'}
           </button>
         </div>
@@ -831,7 +844,20 @@ export default function NewEvaluationPage() {
             <button onClick={() => handleSave('draft')} disabled={saving} className="btn-outline w-full justify-center">
               Guardar borrador
             </button>
-            <button onClick={() => handleSave('published')} disabled={saving} className="btn-brand w-full justify-center">
+            <button
+              onClick={async () => {
+                const ok = await confirm({
+                  title:       'Publicar evaluación',
+                  message:     `¿Publicar "${title || 'esta evaluación'}"? Los alumnos asignados podrán verla y rendir el examen de inmediato.`,
+                  confirmText: 'Sí, publicar',
+                  cancelText:  'Revisar primero',
+                  variant:     'warning',
+                })
+                if (ok) handleSave('published')
+              }}
+              disabled={saving}
+              className="btn-brand w-full justify-center"
+            >
               Publicar
             </button>
           </div>

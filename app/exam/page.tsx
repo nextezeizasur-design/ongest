@@ -62,27 +62,18 @@ export default async function ExamListPage() {
 
   const now = new Date()
 
-  // ── FILTRAR evaluaciones que ya están corregidas (graded) ──
-  // Si todos los intentos completados tienen status 'graded', el examen ya fue
-  // corregido → no aparece en "Mis exámenes", solo en "Mis notas"
+  // ✅ Regla: 1 intento por evaluación.
+  // Si ya hay cualquier intento completado → se oculta de "Mis exámenes" y pasa a "Mis notas"
+  // Solo aparece aquí si: no tiene intentos (puede comenzar) o tiene uno in_progress (puede continuar)
   const pendingEvaluations = evaluations.filter((ev: any) => {
     const attempts   = byEval[ev.id] ?? []
+    const inProgress = attempts.find(a => a.status === 'in_progress')
     const completed  = attempts.filter(a =>
       ['submitted', 'graded', 'timed_out', 'flagged'].includes(a.status)
     )
-    const inProgress = attempts.find(a => a.status === 'in_progress')
 
-    // Si hay un intento en curso → siempre mostrar
     if (inProgress) return true
-
-    // Si no hay intentos → mostrar (para que pueda comenzar)
-    if (completed.length === 0) return true
-
-    // Si TODOS los intentos completados están graded → ocultar (ya corregido)
-    const allGraded = completed.every(a => a.status === 'graded')
-    if (allGraded) return false
-
-    // Si hay alguno submitted (pendiente de corrección) → mostrar con badge "Pendiente"
+    if (completed.length > 0) return false
     return true
   })
 
@@ -104,8 +95,10 @@ export default async function ExamListPage() {
           {/* Curso asignado */}
           {studentCourse && (
             <div className="card flex items-center gap-3 md:gap-4">
-              <div className="flex h-10 w-10 md:h-12 md:w-12 flex-shrink-0 items-center justify-center rounded-xl"
-                style={{ background: '#f5eefb' }}>
+              <div
+                className="flex h-10 w-10 md:h-12 md:w-12 flex-shrink-0 items-center justify-center rounded-xl"
+                style={{ background: '#f5eefb' }}
+              >
                 <svg viewBox="0 0 24 24" fill="none" stroke="#642f8d" strokeWidth={1.5} className="h-5 w-5 md:h-6 md:w-6">
                   <path d="M12 2L2 7l10 5 10-5-10-5z"/>
                   <path d="M2 17l10 5 10-5M2 12l10 5 10-5"/>
@@ -133,43 +126,46 @@ export default async function ExamListPage() {
           )}
 
           {pendingEvaluations.length === 0 ? (
-            <EmptyState
-              title="No hay exámenes pendientes"
-              description="Todos tus exámenes fueron corregidos. Revisá tus notas en 'Mis notas'."
-            />
+            courseIds.length === 0 ? (
+              /* ✅ Sin curso asignado — mensaje claro con acción */
+              <div className="card text-center py-12 md:max-w-2xl md:mx-auto">
+                <div className="flex h-16 w-16 items-center justify-center rounded-2xl mx-auto mb-4"
+                  style={{ background: '#f5eefb' }}>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="#642f8d" strokeWidth={1.5} className="h-8 w-8">
+                    <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+                    <path d="M2 17l10 5 10-5M2 12l10 5 10-5"/>
+                  </svg>
+                </div>
+                <h3 className="text-base font-semibold text-gray-900 mb-2">
+                  Todavía no estás inscripto en ningún curso
+                </h3>
+                <p className="text-sm text-gray-500 max-w-xs mx-auto leading-relaxed">
+                  Para acceder a tus exámenes necesitás estar asignado a un curso.
+                  Contactá a la secretaría del instituto para que te inscriban.
+                </p>
+                <div className="mt-5 flex flex-col sm:flex-row gap-2 justify-center">
+                  <a
+                    href="/exam/mi-curso"
+                    className="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors"
+                  >
+                    Ver mi curso →
+                  </a>
+                </div>
+              </div>
+            ) : (
+              /* Sin exámenes pendientes pero tiene curso */
+              <EmptyState
+                title="No hay exámenes pendientes"
+                description="Todos tus exámenes fueron entregados. Revisá el estado en 'Mis notas'."
+              />
+            )
           ) : (
             <div className="space-y-3 md:max-w-2xl md:mx-auto">
               {pendingEvaluations.map((ev: any) => {
                 const attempts   = byEval[ev.id] ?? []
-                const completed  = attempts.filter(a => ['submitted','graded','timed_out','flagged'].includes(a.status))
                 const inProgress = attempts.find(a => a.status === 'in_progress')
-                const best       = completed.sort((a,b) => (b.score??0)-(a.score??0))[0]
                 const isExpired  = ev.available_until && new Date(ev.available_until) < now
                 const days       = daysUntil(ev.available_until)
-
-                const maxAttempts  = ev.max_attempts ?? null
-                const attemptsUsed = completed.length
-                const limitReached = maxAttempts !== null && attemptsUsed >= maxAttempts
-                const hasSubmitted = completed.length > 0
-                const pendingGrade = completed.some(a => a.status === 'submitted' && a.score === null)
-                const hasOpenQuestions = ['open','mixed','speaking','listening'].includes(ev.eval_type)
-
-                function StatusBadge({ mobile = false }: { mobile?: boolean }) {
-                  if (isExpired) return <span className="badge badge-gray">Cerrado</span>
-                  if (inProgress) return null
-                  if (limitReached) {
-                    if (pendingGrade || (hasOpenQuestions && best?.score === null)) return (
-                      <span className="badge badge-amber">📬 Entregado · Pendiente</span>
-                    )
-                    const score = best?.score ?? 0
-                    return (
-                      <span className={`badge ${score >= ev.pass_score ? 'badge-green' : 'badge-red'}`}>
-                        {score >= ev.pass_score ? '✓ Aprobado' : '✗ Desaprobado'} · {Math.round(score)}%
-                      </span>
-                    )
-                  }
-                  return null
-                }
 
                 return (
                   <div
@@ -181,11 +177,7 @@ export default async function ExamListPage() {
                       {/* Icono */}
                       <div
                         className="flex h-10 w-10 md:h-12 md:w-12 flex-shrink-0 items-center justify-center rounded-xl text-white"
-                        style={{
-                          background: completed.length > 0 && (best?.score??0) >= ev.pass_score
-                            ? '#16a34a'
-                            : isExpired ? '#9ca3af' : '#642f8d'
-                        }}
+                        style={{ background: isExpired ? '#9ca3af' : '#642f8d' }}
                       >
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} className="h-5 w-5 md:h-6 md:w-6">
                           <rect x="4" y="2" width="16" height="20" rx="2"/>
@@ -204,11 +196,6 @@ export default async function ExamListPage() {
                               <span className={`cefr-pill cefr-${ev.cefr_levels.code}`}>{ev.cefr_levels.code}</span>
                             )}
                             <span className="badge badge-gray text-xs">{EVAL_TYPE_LABEL[ev.eval_type]}</span>
-                            {ev.is_adaptive && (
-                              <span className="badge text-xs" style={{ backgroundColor: '#f5eefb', color: '#642f8d' }}>
-                                🧠 Adaptativo
-                              </span>
-                            )}
                           </div>
                         </div>
 
@@ -221,27 +208,19 @@ export default async function ExamListPage() {
                             </span>
                           )}
                           {isExpired && <span>Cerrado · {formatDate(ev.available_until)}</span>}
-                          {best && (
-                            <span className={`font-medium ${(best.score??0) >= ev.pass_score ? 'text-green-600' : 'text-red-600'}`}>
-                              Mejor nota: {Math.round(best.score ?? 0)}%
-                            </span>
-                          )}
-                          {attempts.length > 0 && (
-                            <span>{attempts.length} intento{attempts.length !== 1 ? 's' : ''}</span>
-                          )}
                         </div>
 
                         {/* Botón mobile */}
                         <div className="mt-3 md:hidden">
-                          {(isExpired || limitReached) && !inProgress ? (
-                            <StatusBadge mobile />
+                          {isExpired ? (
+                            <span className="badge badge-gray">Cerrado</span>
                           ) : (
                             <a
                               href={ev.is_adaptive ? `/exam/adaptive/${ev.id}` : `/exam/${ev.id}`}
                               className="inline-flex items-center justify-center w-full py-2.5 text-sm font-semibold text-white rounded-xl hover:opacity-90 transition-opacity"
                               style={{ backgroundColor: '#642f8d' }}
                             >
-                              {inProgress ? 'Continuar →' : hasSubmitted ? 'Reintentar →' : 'Comenzar →'}
+                              {inProgress ? 'Continuar →' : 'Comenzar →'}
                             </a>
                           )}
                         </div>
@@ -249,14 +228,14 @@ export default async function ExamListPage() {
 
                       {/* Botón desktop */}
                       <div className="hidden md:block flex-shrink-0">
-                        {(isExpired || limitReached) && !inProgress ? (
-                          <StatusBadge />
+                        {isExpired ? (
+                          <span className="badge badge-gray">Cerrado</span>
                         ) : (
                           <a
                             href={ev.is_adaptive ? `/exam/adaptive/${ev.id}` : `/exam/${ev.id}`}
                             className="btn-brand"
                           >
-                            {inProgress ? 'Continuar →' : hasSubmitted ? 'Reintentar →' : 'Comenzar →'}
+                            {inProgress ? 'Continuar →' : 'Comenzar →'}
                           </a>
                         )}
                       </div>
@@ -267,7 +246,7 @@ export default async function ExamListPage() {
             </div>
           )}
 
-          {/* Enlace a Mis notas si hay exámenes ya corregidos */}
+          {/* Enlace a Mis notas si hay exámenes ya entregados */}
           {evaluations.length > pendingEvaluations.length && (
             <div className="md:max-w-2xl md:mx-auto">
               <a
@@ -275,17 +254,19 @@ export default async function ExamListPage() {
                 className="flex items-center justify-between w-full card hover:shadow-sm transition-shadow group"
               >
                 <div className="flex items-center gap-3">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-xl"
-                    style={{ background: '#f5eefb' }}>
+                  <div
+                    className="flex h-9 w-9 items-center justify-center rounded-xl"
+                    style={{ background: '#f5eefb' }}
+                  >
                     <svg viewBox="0 0 24 24" fill="none" stroke="#642f8d" strokeWidth={1.5} className="h-5 w-5">
                       <path d="M9 12l2 2 4-4M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
                     </svg>
                   </div>
                   <div>
                     <p className="text-sm font-semibold text-gray-900">
-                      {evaluations.length - pendingEvaluations.length} examen{evaluations.length - pendingEvaluations.length !== 1 ? 'es' : ''} corregido{evaluations.length - pendingEvaluations.length !== 1 ? 's' : ''}
+                      {evaluations.length - pendingEvaluations.length} examen{evaluations.length - pendingEvaluations.length !== 1 ? 'es' : ''} entregado{evaluations.length - pendingEvaluations.length !== 1 ? 's' : ''}
                     </p>
-                    <p className="text-xs text-gray-400">Ver notas y feedback del docente</p>
+                    <p className="text-xs text-gray-400">Ver estado y notas en Mis notas</p>
                   </div>
                 </div>
                 <span className="text-purple-600 text-sm group-hover:translate-x-1 transition-transform">

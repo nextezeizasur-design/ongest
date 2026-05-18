@@ -14,10 +14,10 @@ interface UserProfile {
 }
 
 interface CredentialRecord {
-  email: string
-  temp_password: string
-  role: string
+  email:      string
+  role:       string
   created_at: string
+  invited:    boolean
 }
 
 const ROLE_LABELS: Record<number, string> = {
@@ -130,7 +130,7 @@ export default function UsersClient({ orgId }: UsersClientProps) {
 
       const record: CredentialRecord = {
         email:         form.email,
-        temp_password: json.temp_password,
+        invited:       true,
         role:          ROLE_LABELS[ROLE_IDS[form.role]] ?? form.role,
         created_at:    new Date().toISOString(),
       }
@@ -376,7 +376,7 @@ export default function UsersClient({ orgId }: UsersClientProps) {
                 Usuario creado
               </h2>
               <p className="text-sm text-gray-500 mb-5">
-                Compartí estas credenciales con {newCred.email}
+                Email de bienvenida enviado a {newCred.email}
               </p>
 
               <div className="bg-gray-50 rounded-xl p-4 text-left space-y-3 mb-5">
@@ -385,9 +385,9 @@ export default function UsersClient({ orgId }: UsersClientProps) {
                   <p className="font-mono text-sm text-gray-900 mt-0.5">{newCred.email}</p>
                 </div>
                 <div>
-                  <span className="text-xs text-gray-500 uppercase tracking-wide">Contraseña temporal</span>
-                  <p className="font-mono text-lg font-bold text-purple-700 mt-0.5 tracking-widest">
-                    {newCred.temp_password}
+                  <span className="text-xs text-gray-500 uppercase tracking-wide">Estado</span>
+                  <p className="text-sm text-green-700 mt-0.5 font-medium">
+                    ✓ Invitación enviada por email
                   </p>
                 </div>
                 <div>
@@ -447,7 +447,7 @@ export default function UsersClient({ orgId }: UsersClientProps) {
                         </span>
                       </div>
                       <div className="mt-2 bg-gray-50 rounded-lg px-3 py-2 font-mono text-sm font-bold text-purple-700 tracking-widest">
-                        {c.temp_password}
+                        <span className="text-green-700 text-sm">✓ Invitado por email</span>
                       </div>
                     </div>
                   ))}

@@ -91,15 +91,10 @@ export default function ExerciseEditor({ onAdd, onCancel }: ExerciseEditorProps)
   const [skill,       setSkill]       = useState('grammar')
   const [points,      setPoints]      = useState(1)
 
-  // Match
-  const [matchLeft,  setMatchLeft]  = useState<string[]>(['', '', '', '', ''])
-  const [matchRight, setMatchRight] = useState<{ id: string; body: string; forItem: number | null }[]>([
-    { id: uid(), body: '', forItem: null },
-    { id: uid(), body: '', forItem: null },
-    { id: uid(), body: '', forItem: null },
-    { id: uid(), body: '', forItem: null },
-    { id: uid(), body: '', forItem: null },
-  ])
+  // Match — cada índice es un par (izquierda, derecha correcta)
+  const [matchLeft,       setMatchLeft]       = useState<string[]>(['', '', '', '', ''])
+  const [matchRight,      setMatchRight]      = useState<string[]>(['', '', '', '', ''])
+  const [matchDistractors, setMatchDistractors] = useState<string[]>(['', ''])
 
   // Order, Error, Complete — ítems simples
   const [simpleItems, setSimpleItems] = useState<{ id: string; body: string; answer: string }[]>([
@@ -143,13 +138,18 @@ export default function ExerciseEditor({ onAdd, onCancel }: ExerciseEditorProps)
     switch (exType) {
 
       case 'match': {
+        // Todas las respuestas correctas + distractores = opciones disponibles para el alumno
+        const allRights = matchRight.filter(r => r.trim())
+        const distractors = matchDistractors.filter(d => d.trim())
+
         return matchLeft
           .map((body, i) => {
-            if (!body.trim()) return null
-            // Las opciones = todas las de la columna derecha
-            const opts = matchRight
-              .filter(r => r.body.trim())
-              .map(r => ({ body: r.body.trim(), is_correct: r.forItem === i }))
+            if (!body.trim() || !matchRight[i]?.trim()) return null
+            // Opciones = todas las derechas + distractores, marcando solo la correcta
+            const opts = [
+              ...allRights.map((r, j) => ({ body: r.trim(), is_correct: j === i })),
+              ...distractors.map(d => ({ body: d.trim(), is_correct: false })),
+            ]
             return {
               id:          uid(),
               body:        body.trim(),
@@ -317,7 +317,7 @@ export default function ExerciseEditor({ onAdd, onCancel }: ExerciseEditorProps)
   // Paso 2 — Editor del ejercicio
   const typeInfo = EXERCISE_TYPES.find(t => t.type === exType)!
   const previewCount = exType === 'writing' ? 1
-    : exType === 'match' ? matchLeft.filter(l => l.trim()).length
+    : exType === 'match' ? matchLeft.filter((l, i) => l.trim() && matchRight[i]?.trim()).length
     : exType === 'underline' ? underlineItems.filter(i => i.opt1.trim() && i.opt2.trim()).length
     : exType === 'reading' ? (readingHasQuestions ? readingQuestions.filter(q => q.body.trim()).length : 1)
     : simpleItems.filter(i => i.body.trim()).length
@@ -369,70 +369,136 @@ export default function ExerciseEditor({ onAdd, onCancel }: ExerciseEditorProps)
 
       {/* MATCH */}
       {exType === 'match' && (
-        <div className="space-y-3">
-          <div className="grid grid-cols-2 gap-x-4 gap-y-0">
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Columna izquierda (ítems)</p>
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Columna derecha (opciones)</p>
+        <div className="space-y-4">
 
+          {/* Cabecera columnas */}
+          <div className="grid grid-cols-[1.5rem_1fr_2rem_1fr_2rem] gap-x-2 items-center">
+            <div />
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Columna A</p>
+            <div />
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Columna B (respuesta correcta)</p>
+            <div />
+          </div>
+
+          {/* Pares */}
+          <div className="space-y-2">
             {matchLeft.map((item, i) => (
-              <div key={i} className="contents">
-                {/* Ítem izquierdo */}
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="text-xs text-gray-400 w-4 flex-shrink-0">{i + 1}</span>
-                  <input
-                    type="text"
-                    value={item}
-                    onChange={e => setMatchLeft(prev => prev.map((v, j) => j === i ? e.target.value : v))}
-                    placeholder={`Ítem ${i + 1}`}
-                    className="input text-sm flex-1"
-                  />
-                </div>
-                {/* Opción derecha */}
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="text-xs font-medium text-gray-400 w-4 flex-shrink-0">
-                    {String.fromCharCode(97 + i)}
-                  </span>
-                  <input
-                    type="text"
-                    value={matchRight[i]?.body ?? ''}
-                    onChange={e => setMatchRight(prev => prev.map((r, j) => j === i ? { ...r, body: e.target.value } : r))}
-                    placeholder={`Opción ${String.fromCharCode(97 + i)}`}
-                    className="input text-sm flex-1"
-                  />
-                  {/* Selector de a qué ítem corresponde */}
-                  <select
-                    value={matchRight[i]?.forItem ?? ''}
-                    onChange={e => setMatchRight(prev => prev.map((r, j) =>
-                      j === i ? { ...r, forItem: e.target.value === '' ? null : parseInt(e.target.value) } : r
-                    ))}
-                    className="input text-xs w-20 flex-shrink-0"
-                    title="¿A qué ítem corresponde esta opción?"
-                  >
-                    <option value="">—</option>
-                    {matchLeft.map((_, k) => (
-                      <option key={k} value={k}>Ítem {k + 1}</option>
-                    ))}
-                  </select>
-                </div>
+              <div key={i} className="grid grid-cols-[1.5rem_1fr_2rem_1fr_2rem] gap-x-2 items-center">
+                {/* Número */}
+                <span className="text-xs text-gray-400 text-right">{i + 1}</span>
+
+                {/* Izquierda */}
+                <input
+                  type="text"
+                  value={item}
+                  onChange={e => setMatchLeft(prev => prev.map((v, j) => j === i ? e.target.value : v))}
+                  placeholder={`Ej: She is good…`}
+                  className="input text-sm"
+                />
+
+                {/* Flecha visual */}
+                <span className="text-gray-300 text-center select-none">→</span>
+
+                {/* Derecha correcta */}
+                <input
+                  type="text"
+                  value={matchRight[i] ?? ''}
+                  onChange={e => setMatchRight(prev => prev.map((v, j) => j === i ? e.target.value : v))}
+                  placeholder={`Ej: …at cooking.`}
+                  className="input text-sm border-green-200 focus:border-green-400"
+                />
+
+                {/* Eliminar fila */}
+                <button
+                  onClick={() => {
+                    setMatchLeft(prev => prev.filter((_, j) => j !== i))
+                    setMatchRight(prev => prev.filter((_, j) => j !== i))
+                  }}
+                  disabled={matchLeft.length <= 2}
+                  className="text-gray-300 hover:text-red-500 disabled:opacity-20 flex items-center justify-center"
+                >
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.5} className="h-3.5 w-3.5">
+                    <path d="M4 8h8"/>
+                  </svg>
+                </button>
               </div>
             ))}
           </div>
 
-          {/* Botón agregar fila */}
+          {/* Botón agregar par */}
           <button
             onClick={() => {
               setMatchLeft(prev => [...prev, ''])
-              setMatchRight(prev => [...prev, { id: uid(), body: '', forItem: null }])
+              setMatchRight(prev => [...prev, ''])
             }}
             className="text-xs text-purple-600 hover:text-purple-800"
           >
-            + Agregar fila
+            + Agregar par
           </button>
 
-          <div className="rounded-lg bg-blue-50 border border-blue-100 px-3 py-2 text-xs text-blue-700">
-            💡 El desplegable a la derecha de cada opción indica a qué ítem corresponde la respuesta correcta.
-            Podés tener más opciones que ítems (distractores).
+          {/* Distractores opcionales */}
+          <div className="rounded-xl border border-dashed border-gray-200 p-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs font-semibold text-gray-600">Distractores (opcional)</p>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  Opciones falsas que aparecen en la columna B para dificultar el ejercicio
+                </p>
+              </div>
+            </div>
+            {matchDistractors.map((d, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <span className="text-xs text-red-400 w-4 flex-shrink-0 text-right">✗</span>
+                <input
+                  type="text"
+                  value={d}
+                  onChange={e => setMatchDistractors(prev => prev.map((v, j) => j === i ? e.target.value : v))}
+                  placeholder={`Distractor ${i + 1}`}
+                  className="input text-sm flex-1 border-red-100"
+                />
+                <button
+                  onClick={() => setMatchDistractors(prev => prev.filter((_, j) => j !== i))}
+                  disabled={matchDistractors.length <= 1}
+                  className="text-gray-300 hover:text-red-500 disabled:opacity-20"
+                >
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.5} className="h-3.5 w-3.5">
+                    <path d="M4 8h8"/>
+                  </svg>
+                </button>
+              </div>
+            ))}
+            <button
+              onClick={() => setMatchDistractors(prev => [...prev, ''])}
+              className="text-xs text-gray-400 hover:text-gray-600"
+            >
+              + Agregar distractor
+            </button>
           </div>
+
+          {/* Preview */}
+          {matchLeft.some((l, i) => l.trim() && matchRight[i]?.trim()) && (
+            <div className="rounded-lg bg-gray-50 border border-gray-200 px-3 py-2">
+              <p className="text-xs font-medium text-gray-500 mb-2">Preview columna B (mezclada para el alumno):</p>
+              <div className="flex flex-wrap gap-1.5">
+                {[
+                  ...matchRight.filter(r => r.trim()).map(r => ({ text: r, correct: true })),
+                  ...matchDistractors.filter(d => d.trim()).map(d => ({ text: d, correct: false })),
+                ].sort(() => Math.random() - 0.5).map((opt, i) => (
+                  <span
+                    key={i}
+                    className={`text-xs px-2 py-1 rounded-lg border font-medium ${
+                      opt.correct
+                        ? 'bg-green-50 border-green-200 text-green-800'
+                        : 'bg-red-50 border-red-200 text-red-700'
+                    }`}
+                  >
+                    {opt.text}
+                  </span>
+                ))}
+              </div>
+              <p className="text-[10px] text-gray-400 mt-2">Verde = respuesta real · Rojo = distractor</p>
+            </div>
+          )}
         </div>
       )}
 

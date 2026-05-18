@@ -44,7 +44,7 @@ export default function StudentsClient({ orgId }: { orgId: string }) {
   const [editing,  setEditing]   = useState<Student | null>(null)
   const [saving,   setSaving]    = useState(false)
   const [toast,    setToast]     = useState<{type:'ok'|'err'; msg:string}|null>(null)
-  const [tempPwd,  setTempPwd]   = useState<string|null>(null)
+  const [invited,  setInvited]   = useState<boolean>(false)
   const [form,     setForm]      = useState({ first_name:'', last_name:'', email:'', phone:'', birth_date:'', course_id:'' })
 
   const sb = createClient() as any
@@ -69,7 +69,7 @@ export default function StudentsClient({ orgId }: { orgId: string }) {
 
   function openNew() {
     setForm({ first_name:'', last_name:'', email:'', phone:'', birth_date:'', course_id:'' })
-    setTempPwd(null)
+    setInvited(false)
     setModal('new')
   }
 
@@ -80,7 +80,7 @@ export default function StudentsClient({ orgId }: { orgId: string }) {
     setModal('edit')
   }
 
-  function closeModal() { setModal(null); setEditing(null); setTempPwd(null) }
+  function closeModal() { setModal(null); setEditing(null); setInvited(false) }
 
   async function handleCreate() {
     if (!form.first_name || !form.last_name || !form.email) {
@@ -96,7 +96,7 @@ export default function StudentsClient({ orgId }: { orgId: string }) {
     const data = await res.json()
     setSaving(false)
     if (!res.ok) { showToast('err', data.error ?? 'Error al crear el alumno.'); return }
-    setTempPwd(data.temp_password)
+    setInvited(true)
     await load()
   }
 
@@ -200,15 +200,14 @@ export default function StudentsClient({ orgId }: { orgId: string }) {
               <button onClick={closeModal} className="text-gray-400 hover:text-gray-600 text-lg">✕</button>
             </div>
 
-            {tempPwd ? (
+            {invited ? (
               <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-4 space-y-2">
                 <p className="text-sm font-semibold text-green-800">✓ Alumno creado correctamente</p>
                 <p className="text-xs text-green-700">Email: <strong>{form.email}</strong></p>
                 <p className="text-xs text-green-700">
-                  Contraseña temporal:{' '}
-                  <code className="font-mono font-bold bg-green-100 px-2 py-0.5 rounded text-green-900">{tempPwd}</code>
+                  <span className="text-green-700">✓ Email de bienvenida enviado</span>
                 </p>
-                <p className="text-xs text-green-600 mt-1">Compartí estas credenciales con el alumno. Puede cambiar la contraseña desde su perfil.</p>
+                <p className="text-xs text-green-600 mt-1">El alumno recibirá un link para elegir su propia contraseña. No necesitás compartir ninguna credencial.</p>
                 <button onClick={closeModal} className="btn-brand mt-2 text-xs py-1.5">Cerrar</button>
               </div>
             ) : (

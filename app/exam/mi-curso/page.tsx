@@ -55,10 +55,60 @@ export default async function MiCursoPage() {
         <main className="flex-1 overflow-y-auto p-4 md:p-6 pb-20 md:pb-6 space-y-4">
 
           {!course ? (
-            <div className="card text-center py-12">
-              <p className="text-3xl mb-3">📚</p>
-              <p className="text-sm font-medium text-gray-700">No tenés un curso asignado todavía.</p>
-              <p className="text-xs text-gray-400 mt-1">Contactá a la secretaría para que te inscriban.</p>
+            <div className="space-y-4">
+              {/* Estado vacío — sin curso asignado */}
+              <div className="card text-center py-10">
+                <div className="flex h-16 w-16 items-center justify-center rounded-2xl mx-auto mb-4"
+                  style={{ background: '#f5eefb' }}>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="#642f8d" strokeWidth={1.5} className="h-8 w-8">
+                    <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+                    <path d="M2 17l10 5 10-5M2 12l10 5 10-5"/>
+                  </svg>
+                </div>
+                <h3 className="text-base font-semibold text-gray-900 mb-2">
+                  Todavía no estás inscripto en ningún curso
+                </h3>
+                <p className="text-sm text-gray-500 max-w-xs mx-auto leading-relaxed">
+                  Para acceder a tus clases y exámenes necesitás estar asignado a un curso por la secretaría del instituto.
+                </p>
+              </div>
+
+              {/* Qué hacer */}
+              <div className="card">
+                <h4 className="text-sm font-semibold text-gray-900 mb-3">¿Qué tenés que hacer?</h4>
+                <ol className="space-y-3">
+                  {[
+                    { step: '1', text: 'Comunicate con la secretaría del instituto' },
+                    { step: '2', text: 'Pediles que te asignen al curso que corresponde a tu nivel' },
+                    { step: '3', text: 'Una vez inscripto, vas a ver tus clases y exámenes acá' },
+                  ].map(item => (
+                    <li key={item.step} className="flex items-start gap-3">
+                      <span
+                        className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-xs font-bold text-white"
+                        style={{ background: '#642f8d' }}
+                      >
+                        {item.step}
+                      </span>
+                      <p className="text-sm text-gray-600 pt-0.5">{item.text}</p>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+
+              {/* Ir a exámenes */}
+              <div className="card flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-gray-900">¿Ya te inscribieron?</p>
+                  <p className="text-xs text-gray-400 mt-0.5">Actualizá la página para ver tu curso.</p>
+                </div>
+                <a
+                  href="/exam/mi-curso"
+                  onClick={() => window.location.reload()}
+                  className="btn-brand text-sm"
+                >
+                  Actualizar
+                </a>
+              </div>
             </div>
           ) : (
             <>

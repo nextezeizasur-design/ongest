@@ -114,7 +114,7 @@ function ExamPage({ params }: { params: Promise<{ id: string }> }) {
         // Otra tab abrió el mismo examen — avisar que ya está en curso acá
         channel.postMessage({ type: 'already_open' })
       }
-      if (e.data.type === 'already_open' && phaseRef.current !== 'result') {
+      if (e.data.type === 'already_open' && phaseRef.current === 'exam') {
         // Esta tab recibió aviso de que el examen ya está abierto en otra tab
         setWarnMsg('⚠️ Este examen ya está abierto en otra pestaña. Cerrá esa pestaña para continuar aquí.')
         setShowWarn(true)

@@ -34,6 +34,20 @@ export default async function CoordinatorCourses() {
       .order('last_name'),
   ])
 
+  // Count de grabaciones por curso
+  const courseIds = (courses ?? []).map((c: any) => c.id)
+  const recCounts: Record<string, number> = {}
+  if (courseIds.length > 0) {
+    const { data: recs } = await sb
+      .from('class_recordings')
+      .select('course_id')
+      .in('course_id', courseIds)
+      .eq('is_visible', true)
+    ;(recs ?? []).forEach((r: any) => {
+      recCounts[r.course_id] = (recCounts[r.course_id] ?? 0) + 1
+    })
+  }
+
   // Enriquecer cursos con datos del docente (evita ambigüedad de FK)
   const teacherIds = [...new Set((courses ?? []).map((c: any) => c.teacher_id).filter(Boolean))]
   let teacherMap: Record<string, any> = {}
@@ -71,6 +85,7 @@ export default async function CoordinatorCourses() {
           <DirectorCoursesClient
             courses={coursesWithTeacher}
             counts={counts}
+            recCounts={recCounts}
             teachers={teachers ?? []}
             baseHref={base}
             canDelete={false}

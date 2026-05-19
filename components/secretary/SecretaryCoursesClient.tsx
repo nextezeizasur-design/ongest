@@ -3,9 +3,9 @@
 // components/secretary/SecretaryCoursesClient.tsx
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import CefrPill from '@/components/ui/CefrPill'
-import Badge from '@/components/ui/Badge'
 
 interface CefrLevel {
   id:    number
@@ -20,40 +20,49 @@ interface Teacher {
 }
 
 interface CourseItem {
-  id:            string
-  name:          string
-  is_active:     boolean
-  description?:  string | null
+  id:             string
+  name:           string
+  is_active:      boolean
+  description?:   string | null
   schedule_days?: string | null
   schedule_time?: string | null
   bibliography?:  string | null
   cefr_level_id?: number | null
   teacher_id?:    string | null
   cefr_levels?:   CefrLevel | null
+  profiles?:      { first_name: string; last_name: string } | null
 }
 
 interface Props {
-  courses:   CourseItem[]
-  counts:    Record<string, number>
-  teachers?: Teacher[]
+  courses:    CourseItem[]
+  counts:     Record<string, number>
+  recCounts?: Record<string, number>
+  teachers?:  Teacher[]
 }
 
 const CEFR_LEVELS = [
-  { id: 1, code: 'A1', label: 'Beginner' },
-  { id: 2, code: 'A2', label: 'Elementary' },
-  { id: 3, code: 'B1', label: 'Pre-Intermediate' },
-  { id: 4, code: 'B2', label: 'Intermediate' },
+  { id: 1, code: 'A1', label: 'Beginner'          },
+  { id: 2, code: 'A2', label: 'Elementary'         },
+  { id: 3, code: 'B1', label: 'Pre-Intermediate'   },
+  { id: 4, code: 'B2', label: 'Intermediate'        },
   { id: 5, code: 'C1', label: 'Upper-Intermediate' },
-  { id: 6, code: 'C2', label: 'Advanced' },
+  { id: 6, code: 'C2', label: 'Advanced'           },
 ]
 
-export default function SecretaryCoursesClient({ courses: initialCourses, counts, teachers = [] }: Props) {
+export default function SecretaryCoursesClient({
+  courses: initialCourses,
+  counts,
+  recCounts = {},
+  teachers = [],
+}: Props) {
   const supabase = createClient()
 
   const [courses,      setCourses]      = useState<CourseItem[]>(initialCourses)
   const [editing,      setEditing]      = useState<CourseItem | null>(null)
   const [saving,       setSaving]       = useState(false)
   const [error,        setError]        = useState<string | null>(null)
+
+  // Campos del form
   const [name,         setName]         = useState('')
   const [teacherId,    setTeacherId]    = useState('')
   const [scheduleDays, setScheduleDays] = useState('')
@@ -74,10 +83,7 @@ export default function SecretaryCoursesClient({ courses: initialCourses, counts
     setError(null)
   }
 
-  function closeEdit() {
-    setEditing(null)
-    setError(null)
-  }
+  function closeEdit() { setEditing(null); setError(null) }
 
   async function handleSave() {
     if (!editing) return
@@ -117,45 +123,106 @@ export default function SecretaryCoursesClient({ courses: initialCourses, counts
 
   return (
     <>
-      {/* Lista de cursos */}
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
         {courses.map(course => {
-          const cefr  = course.cefr_levels
-          const count = counts[course.id] ?? 0
+          const cefr    = course.cefr_levels
+          const teacher = course.profiles
+          const alumnos = counts[course.id]    ?? 0
+          const grabs   = recCounts[course.id] ?? 0
 
           return (
-            <div key={course.id} className="card hover:shadow-sm transition-shadow">
-              <div className="flex items-start justify-between gap-3 mb-3">
-                <div className="min-w-0 flex-1">
-                  <p className="font-semibold text-gray-900 truncate">{course.name}</p>
-                  {cefr && <div className="mt-1"><CefrPill code={cefr.code as any} /></div>}
+            <div key={course.id} className="bg-white rounded-2xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow flex flex-col">
+
+              {/* Contenido principal */}
+              <div className="p-5 flex-1">
+                {/* Header: nombre + nivel */}
+                <div className="flex items-start justify-between gap-2 mb-3">
+                  <h3 className="font-semibold text-gray-900 text-base leading-snug">{course.name}</h3>
+                  {cefr && <CefrPill code={cefr.code as any} />}
                 </div>
-                <Badge variant={course.is_active ? 'green' : 'gray'}>
-                  {course.is_active ? 'Activo' : 'Inactivo'}
-                </Badge>
+
+                {/* Docente */}
+                <div className="flex items-center gap-2 mb-3">
+                  {teacher ? (
+                    <>
+                      <div className="h-6 w-6 flex-shrink-0 rounded-full flex items-center justify-center text-[10px] font-semibold text-white"
+                        style={{ background: '#642f8d' }}>
+                        {teacher.first_name[0]}{teacher.last_name[0]}
+                      </div>
+                      <span className="text-xs text-gray-600">{teacher.first_name} {teacher.last_name}</span>
+                    </>
+                  ) : (
+                    <span className="text-xs text-amber-600 bg-amber-50 rounded-full px-2 py-0.5">
+                      ⚠ Sin docente asignado
+                    </span>
+                  )}
+                </div>
+
+                {/* Horario */}
+                <div className="space-y-1 mb-4">
+                  {course.schedule_days && (
+                    <div className="flex items-center gap-2 text-sm text-gray-600">
+                      <span>📅</span><span>{course.schedule_days}</span>
+                    </div>
+                  )}
+                  {course.schedule_time && (
+                    <div className="flex items-center gap-2 text-sm text-gray-600">
+                      <span>🕐</span><span>{course.schedule_time}</span>
+                    </div>
+                  )}
+                  {course.bibliography && (
+                    <div className="flex items-center gap-2 text-sm text-gray-600">
+                      <span>📚</span>
+                      <span className="truncate text-xs text-gray-500">{course.bibliography}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Stats */}
+                <div className="flex items-center gap-4 pt-3 border-t border-gray-100">
+                  <div className="flex items-center gap-1.5 text-sm text-gray-500">
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 20 20" stroke="currentColor" strokeWidth={1.7}>
+                      <circle cx="8" cy="6" r="3"/>
+                      <path d="M2 18c0-4 2.7-6 6-6s6 2 6 6"/>
+                      <path d="M14 9a2.5 2.5 0 0 0 0-5M18 18c0-3-1.5-4.5-4-5.5"/>
+                    </svg>
+                    <span><strong className="text-gray-900">{alumnos}</strong> alumno{alumnos !== 1 ? 's' : ''}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-sm text-gray-500">
+                    <span>📹</span>
+                    <span><strong className="text-gray-900">{grabs}</strong> grabación{grabs !== 1 ? 'es' : ''}</span>
+                  </div>
+                </div>
               </div>
 
-              <div className="space-y-1 text-xs text-gray-500">
-                {course.schedule_days && <p>📅 {course.schedule_days}</p>}
-                {course.schedule_time && <p>🕐 {course.schedule_time}</p>}
-                <p>👥 {count} alumno{count !== 1 ? 's' : ''}</p>
-                {course.bibliography && <p className="truncate">📚 {course.bibliography}</p>}
+              {/* Pie: Editar (la secretaria no sube grabaciones/material) */}
+              <div className="border-t border-gray-100 flex items-center justify-between px-4 py-3">
+                <button
+                  onClick={() => openEdit(course)}
+                  className="flex items-center gap-1.5 text-xs font-medium text-gray-600 hover:text-amber-700 transition-colors"
+                >
+                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 16 16" stroke="currentColor" strokeWidth={1.7}>
+                    <path d="M11.5 2.5l2 2-8 8H3.5v-2l8-8z"/>
+                  </svg>
+                  Editar datos
+                </button>
+                <span className="text-xs text-gray-300">|</span>
+                <Link
+                  href={`/secretary/courses/${course.id}`}
+                  className="text-xs text-gray-400 hover:text-purple-700 transition-colors"
+                >
+                  Ver alumnos →
+                </Link>
               </div>
-
-              <button
-                onClick={() => openEdit(course)}
-                className="mt-3 text-xs text-purple-600 font-medium hover:text-purple-800"
-              >
-                ✏️ Editar →
-              </button>
             </div>
           )
         })}
       </div>
 
-      {/* Modal de edición */}
+      {/* ── Modal de edición ── */}
       {editing && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
           style={{ backgroundColor: 'rgba(0,0,0,0.4)' }}
           onClick={e => { if (e.target === e.currentTarget) closeEdit() }}
         >
@@ -205,7 +272,7 @@ export default function SecretaryCoursesClient({ courses: initialCourses, counts
 
               {teachers.length > 0 && (
                 <div>
-                  <label className="label">Docente asignada</label>
+                  <label className="label">Docente asignado</label>
                   <select value={teacherId} onChange={e => setTeacherId(e.target.value)} className="input">
                     <option value="">Sin docente</option>
                     {teachers.map(t => (

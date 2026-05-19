@@ -53,13 +53,15 @@ export default function ClassRecordings({ courseId, courseName, canUpload }: Pro
   const { confirm, ConfirmDialogNode } = useConfirm()
 
   // Form de subida
-  const [title, setTitle]       = useState('')
-  const [desc, setDesc]         = useState('')
-  const [date, setDate]         = useState(new Date().toISOString().slice(0, 10))
-  const [file, setFile]         = useState<File | null>(null)
+  const [title, setTitle]         = useState('')
+  const [desc, setDesc]           = useState('')
+  const [date, setDate]           = useState(new Date().toISOString().slice(0, 10))
+  const [file, setFile]           = useState<File | null>(null)
+  const [successMsg, setSuccessMsg] = useState('')
 
-  // Límite alineado con el bucket de Supabase (ajustarlo si se cambia en el dashboard)
-  const MAX_FILE_MB    = 500
+  // Límite real del plan Free de Supabase (request HTTP ~50 MB)
+  // Para subir archivos más grandes: upgrade a Supabase Pro o migrar a Cloudflare R2
+  const MAX_FILE_MB    = 50
   const MAX_FILE_BYTES = MAX_FILE_MB * 1024 * 1024
 
   useEffect(() => { loadRecordings() }, [courseId])
@@ -95,11 +97,12 @@ export default function ClassRecordings({ courseId, courseName, canUpload }: Pro
     if (!file || !title.trim()) return
     setUploading(true)
     setError('')
+    setSuccessMsg('')
     setUploadProgress(0)
 
-    // Validar tamaño antes de intentar subir
+    // Validar tamaño ANTES de intentar subir
     if (file.size > MAX_FILE_BYTES) {
-      setError(`El archivo pesa ${formatBytes(file.size)} y supera el límite de ${MAX_FILE_MB} MB. Comprimí el video o dividilo en partes.`)
+      setError(`El archivo pesa ${formatBytes(file.size)} y supera el límite de ${MAX_FILE_MB} MB. Exportá el video desde Zoom en calidad 360p o 480p para reducir el tamaño.`)
       setUploading(false)
       return
     }
@@ -109,7 +112,7 @@ export default function ClassRecordings({ courseId, courseName, canUpload }: Pro
       const timestamp = Date.now()
       const path      = `${courseId}/${timestamp}_${title.replace(/\s+/g, '_')}.${ext}`
 
-      // Subir archivo a Storage
+      // 1. Subir archivo a Storage
       const { error: uploadErr } = await supabase.storage
         .from('class-recordings')
         .upload(path, file, {
@@ -119,9 +122,9 @@ export default function ClassRecordings({ courseId, courseName, canUpload }: Pro
 
       if (uploadErr) throw uploadErr
 
-      // Guardar metadata en DB
+      // 2. Guardar metadata en DB — capturar error explícitamente
       const { data: { user } } = await supabase.auth.getUser()
-      await (supabase as any).from('class_recordings').insert({
+      const { error: insertErr } = await (supabase as any).from('class_recordings').insert({
         course_id:       courseId,
         uploaded_by:     user?.id,
         title:           title.trim(),
@@ -129,16 +132,24 @@ export default function ClassRecordings({ courseId, courseName, canUpload }: Pro
         storage_path:    path,
         file_size_bytes: file.size,
         recorded_at:     date || null,
+        is_visible:      true,   // ← crítico: sin esto no aparece en la lista
       })
 
-      // Notificar a alumnos del curso
+      if (insertErr) {
+        // Si falló la DB, eliminar el archivo ya subido para no dejar huérfanos
+        await supabase.storage.from('class-recordings').remove([path])
+        throw insertErr
+      }
+
+      // 3. Notificar a alumnos
       await fetch('/api/notifications/class-recording', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ course_id: courseId, recording_title: title.trim() }),
-      }).catch(() => {})
+      }).catch(() => {}) // no bloquear si falla la notificación
 
-      // Reset form
+      // 4. Feedback de éxito + resetear form
+      setSuccessMsg(`✓ "${title.trim()}" subida correctamente. Los alumnos ya pueden verla.`)
       setTitle('')
       setDesc('')
       setFile(null)
@@ -146,16 +157,15 @@ export default function ClassRecordings({ courseId, courseName, canUpload }: Pro
       await loadRecordings()
 
     } catch (err: any) {
-      // Traducir errores comunes de Supabase Storage
       const msg: string = err.message ?? ''
-      if (msg.includes('exceeded the maximum allowed size') || msg.includes('Payload too large')) {
-        setError(`El archivo supera el límite del servidor. Máximo permitido: ${MAX_FILE_MB} MB. Tu archivo pesa ${formatBytes(file.size)}.`)
+      if (msg.includes('exceeded the maximum allowed size') || msg.includes('Payload too large') || msg.includes('413')) {
+        setError(`El archivo supera el límite de ${MAX_FILE_MB} MB del servidor. Exportá desde Zoom en calidad 360p o 480p e intentá de nuevo.`)
       } else if (msg.includes('duplicate') || msg.includes('already exists')) {
         setError('Ya existe una grabación con ese nombre. Cambiá el título e intentá de nuevo.')
       } else if (msg.includes('network') || msg.includes('fetch')) {
         setError('Error de conexión. Verificá tu internet e intentá de nuevo.')
       } else {
-        setError(msg || 'Error subiendo el archivo. Verificá tu conexión e intentá de nuevo.')
+        setError(msg || 'No se pudo guardar la grabación. Intentá de nuevo.')
       }
     } finally {
       setUploading(false)
@@ -208,6 +218,23 @@ export default function ClassRecordings({ courseId, courseName, canUpload }: Pro
         )}
       </div>
 
+      {/* Banner de éxito — visible después de subir */}
+      {successMsg && (
+        <div className="flex items-start gap-3 rounded-xl bg-green-50 border border-green-200 px-4 py-3">
+          <svg className="h-5 w-5 flex-shrink-0 text-green-600 mt-0.5" fill="none" viewBox="0 0 20 20" stroke="currentColor" strokeWidth={2}>
+            <polyline points="3,10 8,15 17,5" />
+          </svg>
+          <div>
+            <p className="text-sm font-medium text-green-800">{successMsg}</p>
+          </div>
+          <button onClick={() => setSuccessMsg('')} className="ml-auto text-green-400 hover:text-green-600">
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 16 16" stroke="currentColor" strokeWidth={2}>
+              <line x1="3" y1="3" x2="13" y2="13"/><line x1="13" y1="3" x2="3" y2="13"/>
+            </svg>
+          </button>
+        </div>
+      )}
+
       {/* Form de subida */}
       {showUpload && canUpload && (
         <div className="bg-purple-50 border border-purple-100 rounded-2xl p-5 space-y-3">
@@ -226,7 +253,7 @@ export default function ClassRecordings({ courseId, courseName, canUpload }: Pro
               onChange={e => {
                 const selected = e.target.files?.[0] ?? null
                 if (selected && selected.size > MAX_FILE_BYTES) {
-                  setError(`El archivo pesa ${formatBytes(selected.size)} y supera el límite de ${MAX_FILE_MB} MB. Comprimí el video o dividilo en partes.`)
+                  setError(`El archivo pesa ${formatBytes(selected.size)} y supera el límite de ${MAX_FILE_MB} MB. Exportá desde Zoom en calidad 360p o 480p.`)
                   setFile(null)
                   e.target.value = ''
                 } else {
@@ -245,7 +272,8 @@ export default function ClassRecordings({ courseId, courseName, canUpload }: Pro
             ) : (
               <>
                 <p className="text-sm text-purple-700 font-medium">Subí el MP4 de Zoom</p>
-                <p className="text-xs text-gray-500 mt-0.5">MP4, WebM, MOV · máx 500MB</p>
+                <p className="text-xs text-gray-500 mt-0.5">MP4, WebM, MOV · máx {MAX_FILE_MB} MB</p>
+                <p className="text-xs text-amber-600 mt-1">💡 Si el archivo es grande, exportalo desde Zoom en calidad 360p o 480p</p>
               </>
             )}
           </div>

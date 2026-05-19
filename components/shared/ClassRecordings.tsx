@@ -58,6 +58,10 @@ export default function ClassRecordings({ courseId, courseName, canUpload }: Pro
   const [date, setDate]         = useState(new Date().toISOString().slice(0, 10))
   const [file, setFile]         = useState<File | null>(null)
 
+  // Límite alineado con el bucket de Supabase (ajustarlo si se cambia en el dashboard)
+  const MAX_FILE_MB    = 500
+  const MAX_FILE_BYTES = MAX_FILE_MB * 1024 * 1024
+
   useEffect(() => { loadRecordings() }, [courseId])
 
   async function loadRecordings() {
@@ -92,6 +96,13 @@ export default function ClassRecordings({ courseId, courseName, canUpload }: Pro
     setUploading(true)
     setError('')
     setUploadProgress(0)
+
+    // Validar tamaño antes de intentar subir
+    if (file.size > MAX_FILE_BYTES) {
+      setError(`El archivo pesa ${formatBytes(file.size)} y supera el límite de ${MAX_FILE_MB} MB. Comprimí el video o dividilo en partes.`)
+      setUploading(false)
+      return
+    }
 
     try {
       const ext       = file.name.split('.').pop()
@@ -135,7 +146,17 @@ export default function ClassRecordings({ courseId, courseName, canUpload }: Pro
       await loadRecordings()
 
     } catch (err: any) {
-      setError(err.message ?? 'Error subiendo el archivo. Verificá tu conexión e intentá de nuevo.')
+      // Traducir errores comunes de Supabase Storage
+      const msg: string = err.message ?? ''
+      if (msg.includes('exceeded the maximum allowed size') || msg.includes('Payload too large')) {
+        setError(`El archivo supera el límite del servidor. Máximo permitido: ${MAX_FILE_MB} MB. Tu archivo pesa ${formatBytes(file.size)}.`)
+      } else if (msg.includes('duplicate') || msg.includes('already exists')) {
+        setError('Ya existe una grabación con ese nombre. Cambiá el título e intentá de nuevo.')
+      } else if (msg.includes('network') || msg.includes('fetch')) {
+        setError('Error de conexión. Verificá tu internet e intentá de nuevo.')
+      } else {
+        setError(msg || 'Error subiendo el archivo. Verificá tu conexión e intentá de nuevo.')
+      }
     } finally {
       setUploading(false)
       setUploadProgress(0)
@@ -202,7 +223,17 @@ export default function ClassRecordings({ courseId, courseName, canUpload }: Pro
               ref={fileRef}
               type="file"
               accept="video/mp4,video/webm,video/quicktime"
-              onChange={e => setFile(e.target.files?.[0] ?? null)}
+              onChange={e => {
+                const selected = e.target.files?.[0] ?? null
+                if (selected && selected.size > MAX_FILE_BYTES) {
+                  setError(`El archivo pesa ${formatBytes(selected.size)} y supera el límite de ${MAX_FILE_MB} MB. Comprimí el video o dividilo en partes.`)
+                  setFile(null)
+                  e.target.value = ''
+                } else {
+                  setError('')
+                  setFile(selected)
+                }
+              }}
               className="hidden"
             />
             <div className="text-2xl mb-1">🎬</div>

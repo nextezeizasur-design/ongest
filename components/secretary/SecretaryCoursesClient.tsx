@@ -188,10 +188,12 @@ export default function SecretaryCoursesClient({
                     </svg>
                     <span><strong className="text-gray-900">{alumnos}</strong> alumno{alumnos !== 1 ? 's' : ''}</span>
                   </div>
-                  <div className="flex items-center gap-1.5 text-sm text-gray-500">
-                    <span>📹</span>
-                    <span><strong className="text-gray-900">{grabs}</strong> grabación{grabs !== 1 ? 'es' : ''}</span>
-                  </div>
+                  {grabs > 0 && (
+                    <div className="flex items-center gap-1.5 text-sm text-gray-500">
+                      <span>📹</span>
+                      <span><strong className="text-gray-900">{grabs}</strong> grabación{grabs !== 1 ? 'es' : ''}</span>
+                    </div>
+                  )}
                 </div>
               </div>
 

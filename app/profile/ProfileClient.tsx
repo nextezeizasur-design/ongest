@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import type { RoleName } from '@/types'
 
@@ -24,6 +25,7 @@ type Tab = 'info' | 'password'
 
 export default function ProfileClient({ id, firstName, lastName, email, role }: Props) {
   const supabase = createClient()
+  const router   = useRouter()
 
   const [tab, setTab]         = useState<Tab>('info')
   const initials              = `${firstName[0] ?? ''}${lastName[0] ?? ''}`.toUpperCase()
@@ -104,6 +106,17 @@ export default function ProfileClient({ id, firstName, lastName, email, role }: 
   return (
     <main className="flex-1 overflow-y-auto bg-gray-50 p-6">
       <div className="max-w-xl mx-auto space-y-6">
+
+        {/* Botón volver */}
+        <button
+          onClick={() => router.back()}
+          className="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-gray-900 transition-colors group"
+        >
+          <svg className="h-4 w-4 transition-transform group-hover:-translate-x-0.5" fill="none" viewBox="0 0 16 16" stroke="currentColor" strokeWidth={2}>
+            <polyline points="10,3 5,8 10,13" />
+          </svg>
+          Volver
+        </button>
 
         {/* Header de perfil */}
         <div className="bg-white rounded-2xl border border-gray-200 p-6 flex items-center gap-5">

@@ -43,7 +43,7 @@ export default async function DirectorCourses() {
       .from('class_recordings')
       .select('course_id')
       .in('course_id', courseIds)
-      .eq('is_visible', true)
+      .or('is_visible.eq.true,is_visible.is.null')
     ;(recs ?? []).forEach((r: any) => {
       recCounts[r.course_id] = (recCounts[r.course_id] ?? 0) + 1
     })

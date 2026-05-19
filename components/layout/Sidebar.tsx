@@ -142,18 +142,34 @@ export default function Sidebar({ role, name, email }: SidebarProps) {
         </nav>
 
         {/* User footer */}
-        <div className="border-t border-gray-100 p-3">
-          <div className="flex items-center gap-3 rounded-lg px-2 py-2">
-            <Link href="/profile" title="Mi perfil" className="flex items-center gap-3 min-w-0 flex-1 group">
-              <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white group-hover:opacity-80 transition-opacity"
-                style={{ background: '#642f8d' }}>
-                {initials}
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-xs font-medium text-gray-900 group-hover:text-purple-700 transition-colors">{name}</p>
-                <p className="truncate text-[10px] text-gray-400 group-hover:text-purple-400 transition-colors">Mi perfil</p>
-              </div>
-            </Link>
+        <div className="border-t border-gray-100 p-3 space-y-1">
+          {/* Link explícito a Mi perfil */}
+          <Link
+            href="/profile"
+            className={`flex items-center gap-2.5 rounded-lg px-2 py-2 text-xs font-medium transition-colors ${
+              pathname === '/profile'
+                ? 'text-white'
+                : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'
+            }`}
+            style={pathname === '/profile' ? { background: '#642f8d' } : {}}
+          >
+            <svg className="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 20 20" stroke="currentColor" strokeWidth={1.7}>
+              <circle cx="10" cy="6" r="4"/>
+              <path d="M3 18c0-4 3-7 7-7s7 3 7 7"/>
+            </svg>
+            Mi perfil
+          </Link>
+
+          {/* Avatar + logout */}
+          <div className="flex items-center gap-3 rounded-lg px-2 py-1.5">
+            <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white"
+              style={{ background: '#642f8d' }}>
+              {initials}
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-xs font-medium text-gray-900">{name}</p>
+              <p className="truncate text-[10px] text-gray-400">{email}</p>
+            </div>
             <button
               onClick={() => setShowLogoutConfirm(true)}
               title="Cerrar sesión"

@@ -4,20 +4,13 @@ import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 
 interface UserProfile {
-  id: string
+  id:         string
   first_name: string
-  last_name: string
-  email: string
-  role_id: number
-  is_active: boolean
-  created_at: string
-}
-
-interface CredentialRecord {
+  last_name:  string
   email:      string
-  role:       string
+  role_id:    number
+  is_active:  boolean
   created_at: string
-  invited:    boolean
 }
 
 const ROLE_LABELS: Record<number, string> = {
@@ -26,14 +19,6 @@ const ROLE_LABELS: Record<number, string> = {
   3: 'Secretaria',
   4: 'Alumno',
   5: 'Docente',
-}
-
-const ROLE_IDS: Record<string, number> = {
-  director:    1,
-  coordinator: 2,
-  secretary:   3,
-  student:     4,
-  teacher:     5,
 }
 
 const STAFF_ROLES = [
@@ -47,45 +32,29 @@ interface UsersClientProps {
   orgId: string
 }
 
-const STORAGE_KEY = 'nei_staff_credentials'
-
-function loadCredentials(): CredentialRecord[] {
-  try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '[]')
-  } catch {
-    return []
-  }
-}
-
-function saveCredential(record: CredentialRecord) {
-  const existing = loadCredentials()
-  localStorage.setItem(STORAGE_KEY, JSON.stringify([record, ...existing].slice(0, 50)))
-}
-
 export default function UsersClient({ orgId }: UsersClientProps) {
   const supabase = createClient()
 
-  const [users, setUsers]               = useState<UserProfile[]>([])
-  const [loading, setLoading]           = useState(true)
-  const [filterRole, setFilterRole]     = useState<string>('all')
-  const [search, setSearch]             = useState('')
+  const [users, setUsers]           = useState<UserProfile[]>([])
+  const [loading, setLoading]       = useState(true)
+  const [filterRole, setFilterRole] = useState<string>('all')
+  const [search, setSearch]         = useState('')
 
   // Modal crear usuario
-  const [showCreate, setShowCreate]     = useState(false)
-  const [creating, setCreating]         = useState(false)
-  const [createError, setCreateError]   = useState('')
-  const [form, setForm]                 = useState({
+  const [showCreate, setShowCreate] = useState(false)
+  const [creating, setCreating]     = useState(false)
+  const [createError, setCreateError] = useState('')
+  const [form, setForm]             = useState({
     first_name: '',
     last_name:  '',
     email:      '',
     role:       'teacher',
   })
 
-  // Modal credenciales
-  const [showCreds, setShowCreds]       = useState(false)
-  const [newCred, setNewCred]           = useState<CredentialRecord | null>(null)
-  const [credsHistory, setCredsHistory] = useState<CredentialRecord[]>([])
-  const [showHistory, setShowHistory]   = useState(false)
+  // Modal confirmación post-creación
+  const [showSuccess, setShowSuccess] = useState(false)
+  const [lastEmail, setLastEmail]     = useState('')
+  const [lastRole, setLastRole]       = useState('')
 
   useEffect(() => { fetchUsers() }, [])
 
@@ -128,16 +97,10 @@ export default function UsersClient({ orgId }: UsersClientProps) {
         return
       }
 
-      const record: CredentialRecord = {
-        email:         form.email,
-        invited:       true,
-        role:          ROLE_LABELS[ROLE_IDS[form.role]] ?? form.role,
-        created_at:    new Date().toISOString(),
-      }
-      saveCredential(record)
-      setNewCred(record)
+      setLastEmail(form.email)
+      setLastRole(ROLE_LABELS[{ director: 1, coordinator: 2, secretary: 3, student: 4, teacher: 5 }[form.role] ?? 5] ?? form.role)
       setShowCreate(false)
-      setShowCreds(true)
+      setShowSuccess(true)
       setForm({ first_name: '', last_name: '', email: '', role: 'teacher' })
       fetchUsers()
     } finally {
@@ -162,21 +125,13 @@ export default function UsersClient({ orgId }: UsersClientProps) {
             {users.length} usuario{users.length !== 1 ? 's' : ''} en total
           </p>
         </div>
-        <div className="flex gap-3">
-          <button
-            onClick={() => { setCredsHistory(loadCredentials()); setShowHistory(true) }}
-            className="flex items-center gap-2 px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-          >
-            🔑 Credenciales
-          </button>
-          <button
-            onClick={() => { setShowCreate(true); setCreateError('') }}
-            className="flex items-center gap-2 px-4 py-2 text-sm text-white rounded-lg transition-colors"
-            style={{ backgroundColor: '#642f8d' }}
-          >
-            + Nuevo usuario
-          </button>
-        </div>
+        <button
+          onClick={() => { setShowCreate(true); setCreateError('') }}
+          className="flex items-center gap-2 px-4 py-2 text-sm text-white rounded-lg transition-colors"
+          style={{ backgroundColor: '#642f8d' }}
+        >
+          + Nuevo usuario
+        </button>
       </div>
 
       {/* Filtros */}
@@ -366,99 +321,48 @@ export default function UsersClient({ orgId }: UsersClientProps) {
         </div>
       )}
 
-      {/* ── Modal: Credenciales nuevas ── */}
-      {showCreds && newCred && (
+      {/* ── Modal: Confirmación post-creación ── */}
+      {showSuccess && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm">
             <div className="p-6 text-center">
-              <div className="text-4xl mb-3">✅</div>
+              {/* Check icon */}
+              <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-green-100">
+                <svg className="h-7 w-7 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+              </div>
+
               <h2 className="text-lg font-semibold text-gray-900 mb-1">
-                Usuario creado
+                ¡Usuario creado!
               </h2>
               <p className="text-sm text-gray-500 mb-5">
-                Email de bienvenida enviado a {newCred.email}
+                Se envió un email de bienvenida a<br />
+                <span className="font-medium text-gray-800">{lastEmail}</span>
               </p>
 
-              <div className="bg-gray-50 rounded-xl p-4 text-left space-y-3 mb-5">
-                <div>
-                  <span className="text-xs text-gray-500 uppercase tracking-wide">Email</span>
-                  <p className="font-mono text-sm text-gray-900 mt-0.5">{newCred.email}</p>
+              <div className="bg-gray-50 rounded-xl p-4 text-left mb-5 space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">Rol asignado</span>
+                  <span className="font-medium text-gray-900">{lastRole}</span>
                 </div>
-                <div>
-                  <span className="text-xs text-gray-500 uppercase tracking-wide">Estado</span>
-                  <p className="text-sm text-green-700 mt-0.5 font-medium">
-                    ✓ Invitación enviada por email
-                  </p>
-                </div>
-                <div>
-                  <span className="text-xs text-gray-500 uppercase tracking-wide">Rol</span>
-                  <p className="text-sm text-gray-900 mt-0.5">{newCred.role}</p>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">Acceso</span>
+                  <span className="text-green-700 font-medium">✓ Link de invitación enviado</span>
                 </div>
               </div>
 
-              <p className="text-xs text-amber-600 bg-amber-50 rounded-lg px-3 py-2 mb-5">
-                ⚠️ Guardá esta contraseña — no se puede recuperar después.
-                Se guarda en el historial local de este dispositivo.
+              <p className="text-xs text-gray-400 mb-5">
+                El usuario deberá activar su cuenta desde el email recibido.
               </p>
 
               <button
-                onClick={() => { setShowCreds(false); setNewCred(null) }}
-                className="w-full px-4 py-2 text-sm text-white rounded-lg transition-colors"
+                onClick={() => setShowSuccess(false)}
+                className="w-full px-4 py-2.5 text-sm font-medium text-white rounded-lg transition-colors"
                 style={{ backgroundColor: '#642f8d' }}
               >
-                Entendido
+                Listo
               </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Modal: Historial de credenciales ── */}
-      {showHistory && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[80vh] flex flex-col">
-            <div className="flex items-center justify-between p-6 border-b border-gray-200">
-              <h2 className="text-lg font-semibold text-gray-900">Historial de credenciales</h2>
-              <button
-                onClick={() => setShowHistory(false)}
-                className="text-gray-400 hover:text-gray-600 text-2xl leading-none"
-              >
-                ×
-              </button>
-            </div>
-
-            <div className="overflow-y-auto flex-1 p-6">
-              {credsHistory.length === 0 ? (
-                <p className="text-center text-gray-400 py-8">No hay credenciales guardadas</p>
-              ) : (
-                <div className="space-y-3">
-                  {credsHistory.map((c, i) => (
-                    <div key={i} className="border border-gray-200 rounded-xl p-4">
-                      <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <p className="font-medium text-sm text-gray-900">{c.email}</p>
-                          <p className="text-xs text-gray-500">{c.role}</p>
-                        </div>
-                        <span className="text-xs text-gray-400 whitespace-nowrap">
-                          {new Date(c.created_at).toLocaleDateString('es-AR', {
-                            day: '2-digit', month: '2-digit', year: '2-digit',
-                            hour: '2-digit', minute: '2-digit'
-                          })}
-                        </span>
-                      </div>
-                      <div className="mt-2 bg-gray-50 rounded-lg px-3 py-2 font-mono text-sm font-bold text-purple-700 tracking-widest">
-                        <span className="text-green-700 text-sm">✓ Invitado por email</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="p-4 border-t border-gray-200">
-              <p className="text-xs text-gray-400 text-center">
-                Guardado localmente en este dispositivo (últimos 50 registros)
-              </p>
             </div>
           </div>
         </div>

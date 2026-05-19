@@ -385,27 +385,25 @@ export default function NewEvaluationPage() {
               </div>
             </div>
 
-            {/* Adaptativo */}
-            <div className="rounded-xl border border-gray-200 p-4 space-y-3">
+            {/* Adaptativo — deshabilitado hasta ampliar banco de preguntas */}
+            <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50/60 p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-gray-900">🧠 Evaluación Adaptativa</p>
-                  <p className="text-xs text-gray-400 mt-0.5">La dificultad se ajusta en tiempo real según las respuestas del alumno</p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-medium text-gray-500">🧠 Evaluación Adaptativa</p>
+                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-0.5 text-[11px] font-semibold text-amber-700">
+                      ⏳ Próximamente
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    En desarrollo — requiere mayor volumen en el banco de preguntas
+                  </p>
                 </div>
-                <button type="button" onClick={() => setIsAdaptive(prev => !prev)}
-                  className={`relative inline-flex h-6 w-11 flex-shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ${isAdaptive ? 'bg-purple-600' : 'bg-gray-200'}`}
-                  style={isAdaptive ? { backgroundColor: '#642f8d' } : {}}>
-                  <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform duration-200 ${isAdaptive ? 'translate-x-5' : 'translate-x-0'}`} />
-                </button>
+                {/* Toggle deshabilitado visualmente */}
+                <div className="relative inline-flex h-6 w-11 flex-shrink-0 cursor-not-allowed rounded-full bg-gray-200 opacity-50">
+                  <span className="inline-block h-5 w-5 translate-x-0 transform rounded-full bg-white shadow" />
+                </div>
               </div>
-              {isAdaptive && (
-                <div>
-                  <label className="label">Cantidad de preguntas que verá el alumno</label>
-                  <input type="number" min={5} max={50} value={adaptiveLength}
-                    onChange={e => setAdaptiveLength(+e.target.value)} className="input w-32" />
-                  <p className="text-xs text-gray-400 mt-1">Necesitás al menos el doble de preguntas en el banco.</p>
-                </div>
-              )}
             </div>
 
             {/* Cursos */}

@@ -27,7 +27,7 @@ export default async function TeacherCourses() {
       ? sb.from('enrollments').select('course_id').in('course_id', courseIds)
       : { data: [] },
     courseIds.length > 0
-      ? sb.from('class_recordings').select('course_id').in('course_id', courseIds).eq('is_visible', true)
+      ? sb.from('class_recordings').select('course_id').in('course_id', courseIds).or('is_visible.eq.true,is_visible.is.null')
       : { data: [] },
   ])
 
@@ -96,10 +96,12 @@ export default async function TeacherCourses() {
                         </svg>
                         <span><strong className="text-gray-900">{alumnos}</strong> alumno{alumnos !== 1 ? 's' : ''}</span>
                       </div>
-                      <div className="flex items-center gap-1.5 text-sm text-gray-500">
-                        <span>📹</span>
-                        <span><strong className="text-gray-900">{grabs}</strong> grabación{grabs !== 1 ? 'es' : ''}</span>
-                      </div>
+                      {grabs > 0 && (
+                        <div className="flex items-center gap-1.5 text-sm text-gray-500">
+                          <span>📹</span>
+                          <span><strong className="text-gray-900">{grabs}</strong> grabación{grabs !== 1 ? 'es' : ''}</span>
+                        </div>
+                      )}
                     </div>
                   </div>
 

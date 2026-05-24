@@ -20,7 +20,7 @@ export default async function DirectorDashboard() {
     { count: publishedCount },
   ] = await Promise.all([
     sb.from('courses').select('id', { count: 'exact', head: true })
-      .eq('organization_id', orgId),
+      .eq('organization_id', orgId).eq('is_active', true),
     sb.from('profiles').select('id', { count: 'exact', head: true })
       .eq('organization_id', orgId).eq('role_id', 4),
     sb.from('evaluations').select('id', { count: 'exact', head: true })

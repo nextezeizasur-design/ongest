@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
     if (!user) return NextResponse.json({ error: 'No autenticado.' }, { status: 401 })
 
     const { data: profile } = await supabase
-      .from('profiles').select('role_id').eq('id', user.id).single()
+      .from('profiles').select('role_id, organization_id').eq('id', user.id).single()
     if (!profile || !ALLOWED_ROLES.includes(profile.role_id)) {
       return NextResponse.json({ error: 'Sin permisos.' }, { status: 403 })
     }

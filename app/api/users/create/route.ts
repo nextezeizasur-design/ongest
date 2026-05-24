@@ -12,7 +12,7 @@ const ROLE_IDS: Record<string, number> = {
 
 export async function POST(request: NextRequest) {
   try {
-    const { first_name, last_name, email, role, organization_id: bodyOrgId } = await request.json()
+    const { first_name, last_name, email, role } = await request.json()
 
     if (!first_name || !last_name || !email || !role) {
       return NextResponse.json(
@@ -57,7 +57,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Solo el director puede crear usuarios.' }, { status: 403 })
     }
 
-    const organization_id = bodyOrgId ?? profile.organization_id
+    // organization_id siempre viene del perfil del caller autenticado
+    // Ignorar cualquier valor enviado en el body para prevenir tenant injection
+    const organization_id = profile.organization_id
 
     // Usar Service Role para crear el usuario en Auth
     const adminSupabase = createServerClient(

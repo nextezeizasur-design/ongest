@@ -57,6 +57,33 @@ function qTypeLabel(q_type: string): { label: string; color: string } {
 
 type Phase = 'instructions' | 'exam'
 
+// ── Shuffle determinístico (seeded) ──────────────────────────────────────────
+// Usa el attempt_id como semilla para que el mismo alumno vea el mismo orden
+// si recarga la página, pero distinto al de sus compañeros.
+// Algoritmo: Fisher-Yates con PRNG xmur3 + mulberry32
+function seedRng(seed: string): () => number {
+  let h = 2166136261 >>> 0
+  for (let i = 0; i < seed.length; i++) {
+    h = Math.imul(h ^ seed.charCodeAt(i), 16777619)
+  }
+  return function () {
+    h += h << 13; h ^= h >>> 7
+    h += h << 3;  h ^= h >>> 17
+    h += h << 5
+    return ((h >>> 0) / 4294967296)
+  }
+}
+
+function shuffleWithSeed<T>(arr: T[], seed: string): T[] {
+  const rng    = seedRng(seed)
+  const result = [...arr]
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [result[i], result[j]] = [result[j], result[i]]
+  }
+  return result
+}
+
 
 export default function ExamPageWrapper({ params }: { params: Promise<{ id: string }> }) {
   return (
@@ -164,7 +191,7 @@ function ExamPage({ params }: { params: Promise<{ id: string }> }) {
       }
 
       // Combinar en memoria
-      const questions: Question[] = questionsRaw.map(q => ({
+      const questionsRaw2: Question[] = questionsRaw.map(q => ({
         id:         q.id,
         body:       q.body,
         q_type:     q.q_type,
@@ -175,19 +202,42 @@ function ExamPage({ params }: { params: Promise<{ id: string }> }) {
           .sort((a, b) => a.sort_order - b.sort_order),
       }))
 
-      const examData: ExamData = { ...evalData, questions }
-      setExam(examData)
-
-      // 4. Buscar si hay un intento en_progress existente (sin crear uno nuevo)
-      // El intento se crea solo cuando el alumno hace click en "Comenzar"
-      const { data: existingAttempt } = await supabase
+      // ── Shuffle determinístico ──────────────────────────────────────────
+      // Seed = attempt_id del intento en curso (si ya existe) o userId+examId.
+      // Garantiza que el mismo alumno ve el mismo orden si recarga,
+      // pero diferente al de sus compañeros.
+      const existingAttemptPre = await supabase
         .from('attempts')
-        .select('id, started_at')
+        .select('id')
         .eq('evaluation_id', examId)
         .eq('student_id', user.id)
         .eq('status', 'in_progress')
         .is('submitted_at', null)
         .maybeSingle()
+        .then(r => r.data)
+
+      const shuffleSeed = existingAttemptPre?.id ?? `${user.id}-${examId}`
+
+      const shuffledQuestions = shuffleWithSeed(questionsRaw2, shuffleSeed).map(q => ({
+        ...q,
+        // Shuffle de opciones solo en multiple_choice y true_false
+        options: ['multiple_choice', 'true_false'].includes(q.q_type)
+          ? shuffleWithSeed(q.options, `${shuffleSeed}-${q.id}`)
+          : q.options,
+      }))
+
+      const examData: ExamData = { ...evalData, questions: shuffledQuestions }
+
+      // 4. Buscar si hay un intento en_progress existente (sin crear uno nuevo)
+      // El intento se crea solo cuando el alumno hace click en "Comenzar"
+      const existingAttempt = existingAttemptPre
+        ? await supabase
+            .from('attempts')
+            .select('id, started_at')
+            .eq('id', existingAttemptPre.id)
+            .single()
+            .then(r => r.data)
+        : null
 
       // Verificar si ya agotó los intentos
       if ((evalData as any).max_attempts) {

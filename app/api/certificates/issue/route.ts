@@ -4,6 +4,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 
+// Roles staff que pueden emitir certificados para cualquier alumno de su org
+const STAFF_ROLE_IDS = [1, 2, 5] // director, coordinator, teacher
+
 export async function POST(req: NextRequest) {
   try {
     const { attempt_id } = await req.json()
@@ -11,6 +14,19 @@ export async function POST(req: NextRequest) {
 
     const supabase = await createClient()
     const sb = supabase as any
+
+    // Verificar sesión activa
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return NextResponse.json({ error: 'No autenticado.' }, { status: 401 })
+
+    // Obtener perfil del caller para verificar rol y org
+    const { data: callerProfile } = await sb
+      .from('profiles')
+      .select('role_id, organization_id')
+      .eq('id', user.id)
+      .single()
+
+    if (!callerProfile) return NextResponse.json({ error: 'Perfil no encontrado.' }, { status: 403 })
 
     // Verificar que el intento existe y está completado
     const { data: attempt } = await sb
@@ -25,6 +41,16 @@ export async function POST(req: NextRequest) {
 
     if (!attempt) {
       return NextResponse.json({ error: 'Attempt not found or not submitted' }, { status: 404 })
+    }
+
+    // Verificar ownership: el caller debe ser el propio alumno
+    // o staff (director/coordinator/teacher) de la misma organización
+    const isOwner = attempt.student_id === user.id
+    const isStaff = STAFF_ROLE_IDS.includes(callerProfile.role_id) &&
+                    callerProfile.organization_id === attempt.evaluations?.organization_id
+
+    if (!isOwner && !isStaff) {
+      return NextResponse.json({ error: 'Sin permisos para emitir este certificado.' }, { status: 403 })
     }
 
     // Verificar que no existe ya un certificado para este intento

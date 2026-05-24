@@ -57,33 +57,6 @@ function qTypeLabel(q_type: string): { label: string; color: string } {
 
 type Phase = 'instructions' | 'exam'
 
-// ── Shuffle determinístico (seeded) ──────────────────────────────────────────
-// Usa el attempt_id como semilla para que el mismo alumno vea el mismo orden
-// si recarga la página, pero distinto al de sus compañeros.
-// Algoritmo: Fisher-Yates con PRNG xmur3 + mulberry32
-function seedRng(seed: string): () => number {
-  let h = 2166136261 >>> 0
-  for (let i = 0; i < seed.length; i++) {
-    h = Math.imul(h ^ seed.charCodeAt(i), 16777619)
-  }
-  return function () {
-    h += h << 13; h ^= h >>> 7
-    h += h << 3;  h ^= h >>> 17
-    h += h << 5
-    return ((h >>> 0) / 4294967296)
-  }
-}
-
-function shuffleWithSeed<T>(arr: T[], seed: string): T[] {
-  const rng    = seedRng(seed)
-  const result = [...arr]
-  for (let i = result.length - 1; i > 0; i--) {
-    const j = Math.floor(rng() * (i + 1));
-    [result[i], result[j]] = [result[j], result[i]]
-  }
-  return result
-}
-
 
 export default function ExamPageWrapper({ params }: { params: Promise<{ id: string }> }) {
   return (
@@ -113,6 +86,8 @@ function ExamPage({ params }: { params: Promise<{ id: string }> }) {
   const [loading, setLoading]       = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [userId, setUserId]         = useState<string>('')
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Refs para evitar stale closures
   const phaseRef     = useRef<Phase>('instructions')
@@ -191,7 +166,7 @@ function ExamPage({ params }: { params: Promise<{ id: string }> }) {
       }
 
       // Combinar en memoria
-      const questionsRaw2: Question[] = questionsRaw.map(q => ({
+      const questions: Question[] = questionsRaw.map(q => ({
         id:         q.id,
         body:       q.body,
         q_type:     q.q_type,
@@ -202,42 +177,19 @@ function ExamPage({ params }: { params: Promise<{ id: string }> }) {
           .sort((a, b) => a.sort_order - b.sort_order),
       }))
 
-      // ── Shuffle determinístico ──────────────────────────────────────────
-      // Seed = attempt_id del intento en curso (si ya existe) o userId+examId.
-      // Garantiza que el mismo alumno ve el mismo orden si recarga,
-      // pero diferente al de sus compañeros.
-      const existingAttemptPre = await supabase
+      const examData: ExamData = { ...evalData, questions }
+      setExam(examData)
+
+      // 4. Buscar si hay un intento en_progress existente (sin crear uno nuevo)
+      // El intento se crea solo cuando el alumno hace click en "Comenzar"
+      const { data: existingAttempt } = await supabase
         .from('attempts')
-        .select('id')
+        .select('id, started_at')
         .eq('evaluation_id', examId)
         .eq('student_id', user.id)
         .eq('status', 'in_progress')
         .is('submitted_at', null)
         .maybeSingle()
-        .then(r => r.data)
-
-      const shuffleSeed = existingAttemptPre?.id ?? `${user.id}-${examId}`
-
-      const shuffledQuestions = shuffleWithSeed(questionsRaw2, shuffleSeed).map(q => ({
-        ...q,
-        // Shuffle de opciones solo en multiple_choice y true_false
-        options: ['multiple_choice', 'true_false'].includes(q.q_type)
-          ? shuffleWithSeed(q.options, `${shuffleSeed}-${q.id}`)
-          : q.options,
-      }))
-
-      const examData: ExamData = { ...evalData, questions: shuffledQuestions }
-
-      // 4. Buscar si hay un intento en_progress existente (sin crear uno nuevo)
-      // El intento se crea solo cuando el alumno hace click en "Comenzar"
-      const existingAttempt = existingAttemptPre
-        ? await supabase
-            .from('attempts')
-            .select('id, started_at')
-            .eq('id', existingAttemptPre.id)
-            .single()
-            .then(r => r.data)
-        : null
 
       // Verificar si ya agotó los intentos
       if ((evalData as any).max_attempts) {
@@ -282,6 +234,15 @@ function ExamPage({ params }: { params: Promise<{ id: string }> }) {
         if (Object.keys(answerMap).length > 0) {
           setPhase('exam')
           phaseRef.current = 'exam'
+
+          // Restaurar posición de pregunta desde localStorage
+          try {
+            const savedPos = localStorage.getItem(`exam_pos_${existingAttempt.id}`)
+            if (savedPos !== null) {
+              const pos = parseInt(savedPos)
+              if (!isNaN(pos) && pos >= 0) setCurrentQ(pos)
+            }
+          } catch {}
 
           if (examData.time_limit_min) {
             const elapsed   = Math.floor((Date.now() - new Date(existingAttempt.started_at).getTime()) / 1000)
@@ -344,6 +305,9 @@ function ExamPage({ params }: { params: Promise<{ id: string }> }) {
       if (document.fullscreenElement) {
         await document.exitFullscreen().catch(() => {})
       }
+
+      // Limpiar posición guardada al entregar
+      try { localStorage.removeItem(`exam_pos_${att.id}`) } catch {}
 
       // Actualizar attempt: submitted_at + status
       // timed_out y anti-cheat también llevan submitted_at para que cuenten como completados
@@ -429,18 +393,42 @@ function ExamPage({ params }: { params: Promise<{ id: string }> }) {
       return next
     })
 
-    // Para MC: guardamos option_id. Para open: guardamos text_answer
+    // Guardar posición actual en localStorage para retomar si el browser se cierra
+    try {
+      localStorage.setItem(`exam_pos_${att.id}`, String(currentQ))
+    } catch {}
+
+    // Indicador visual: saving → saved / error
+    setSaveStatus('saving')
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+
     const row = isOptionId
-      ? { attempt_id: att.id, question_id: questionId, option_id: value, text_answer: null }
-      : { attempt_id: att.id, question_id: questionId, option_id: null, text_answer: value }
+      ? { attempt_id: att.id, question_id: questionId, option_id: value,  text_answer: null  }
+      : { attempt_id: att.id, question_id: questionId, option_id: null,   text_answer: value }
 
-    // ── FIX: cast a any para evitar error de tipos con option_id nullable ──
-    const { error: saveErr } = await (supabase as any)
-      .from('answers')
-      .upsert(row, { onConflict: 'attempt_id,question_id' })
+    // Retry automático: hasta 3 intentos con backoff 500ms / 1500ms
+    let lastError: any = null
+    for (let attempt_n = 0; attempt_n < 3; attempt_n++) {
+      if (attempt_n > 0) await new Promise(r => setTimeout(r, attempt_n * 500))
 
-    if (saveErr) {
+      const { error } = await (supabase as any)
+        .from('answers')
+        .upsert(row, { onConflict: 'attempt_id,question_id' })
+
+      if (!error) {
+        lastError = null
+        break
+      }
+      lastError = error
+    }
+
+    if (lastError) {
+      setSaveStatus('error')
       toast.warning('No se guardó', 'Tu respuesta no se pudo guardar. Verificá tu conexión.')
+    } else {
+      setSaveStatus('saved')
+      // Volver a idle después de 2 segundos para no distraer
+      saveTimerRef.current = setTimeout(() => setSaveStatus('idle'), 2000)
     }
   }
 
@@ -627,6 +615,32 @@ function ExamPage({ params }: { params: Promise<{ id: string }> }) {
         </div>
         <div className="flex items-center gap-2 md:gap-4 flex-shrink-0">
           <span className="text-xs text-gray-500 hidden sm:inline">{answered}/{total} respondidas</span>
+
+          {/* Indicador de auto-save */}
+          {saveStatus === 'saving' && (
+            <span className="flex items-center gap-1 text-xs text-gray-400">
+              <svg className="h-3 w-3 animate-spin" fill="none" viewBox="0 0 16 16" stroke="currentColor" strokeWidth={2}>
+                <path d="M8 2a6 6 0 0 1 0 12" strokeLinecap="round"/>
+              </svg>
+              Guardando…
+            </span>
+          )}
+          {saveStatus === 'saved' && (
+            <span className="flex items-center gap-1 text-xs text-green-600">
+              <svg className="h-3 w-3" fill="none" viewBox="0 0 16 16" stroke="currentColor" strokeWidth={2.5}>
+                <polyline points="2,8 6,12 14,4"/>
+              </svg>
+              Guardado
+            </span>
+          )}
+          {saveStatus === 'error' && (
+            <span className="flex items-center gap-1 text-xs text-red-500">
+              <svg className="h-3 w-3" fill="none" viewBox="0 0 16 16" stroke="currentColor" strokeWidth={2}>
+                <line x1="3" y1="3" x2="13" y2="13"/><line x1="13" y1="3" x2="3" y2="13"/>
+              </svg>
+              Sin conexión
+            </span>
+          )}
           {/* ✅ Hora local — ayuda al alumno a manejar el tiempo real */}
           {localTime && (
             <span className="hidden sm:inline text-xs text-gray-400 font-mono">

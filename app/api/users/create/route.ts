@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { cookies } from 'next/headers'
+import { rateLimit, getClientIp } from '@/lib/rate-limit'
 
 const ROLE_IDS: Record<string, number> = {
   director:    1,
@@ -9,9 +10,17 @@ const ROLE_IDS: Record<string, number> = {
   student:     4,
   teacher:     5,
 }
+const RATE_LIMIT = { windowMs: 60_000, max: 10 } // 10 por minuto — crear usuarios es una acción poco frecuente
 
 export async function POST(request: NextRequest) {
   try {
+    const rl = rateLimit(`users-create:${getClientIp(request)}`, RATE_LIMIT)
+    if (!rl.success) {
+      return NextResponse.json(
+        { error: `Demasiadas solicitudes. Intentá de nuevo en ${Math.ceil((rl.resetAt - Date.now()) / 60000)} min.` },
+        { status: 429 }
+      )
+    }
     const { first_name, last_name, email, role } = await request.json()
 
     if (!first_name || !last_name || !email || !role) {

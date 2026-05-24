@@ -1,9 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
+import { rateLimit, getClientIp } from '@/lib/rate-limit'
+
+const RATE_LIMIT = { windowMs: 60_000, max: 10 } // 10 por minuto
 
 export async function POST(request: NextRequest) {
   try {
+    const rl = rateLimit(`students-create:${getClientIp(request)}`, RATE_LIMIT)
+    if (!rl.success) {
+      return NextResponse.json(
+        { error: `Demasiadas solicitudes. Intentá de nuevo en ${Math.ceil((rl.resetAt - Date.now()) / 60000)} min.` },
+        { status: 429 }
+      )
+    }
     const body = await request.json()
     const { first_name, last_name, email, phone, birth_date, course_id, organization_id } = body
 

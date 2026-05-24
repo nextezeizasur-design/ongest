@@ -1,7 +1,7 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
-const PUBLIC_ROUTES = ['/login', '/api/auth', '/api/org']
+const PUBLIC_ROUTES = ['/login', '/register', '/api/auth', '/api/org', '/api/register', '/verify']
 
 const ROLE_HOME: Record<string, string> = {
   director:    '/director',

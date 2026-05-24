@@ -3,6 +3,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 
+// Roles staff que pueden generar recomendaciones para cualquier alumno de su org
+const STAFF_ROLE_IDS = [1, 2, 5] // director, coordinator, teacher
+
 export async function POST(req: NextRequest) {
   try {
     const { attempt_id } = await req.json()
@@ -10,6 +13,19 @@ export async function POST(req: NextRequest) {
 
     const supabase = await createClient()
     const sb = supabase as any
+
+    // Verificar sesión activa
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return NextResponse.json({ error: 'No autenticado.' }, { status: 401 })
+
+    // Obtener perfil del caller
+    const { data: callerProfile } = await sb
+      .from('profiles')
+      .select('role_id, organization_id')
+      .eq('id', user.id)
+      .single()
+
+    if (!callerProfile) return NextResponse.json({ error: 'Perfil no encontrado.' }, { status: 403 })
 
     // ── Obtener datos del intento ──────────────────────────────────────────
     const { data: attempt } = await sb
@@ -19,6 +35,22 @@ export async function POST(req: NextRequest) {
       .single()
 
     if (!attempt) return NextResponse.json({ error: 'attempt not found' }, { status: 404 })
+
+    // Verificar ownership: el caller debe ser el propio alumno
+    // o staff de la misma organización que la evaluación
+    const { data: evalOrg } = await sb
+      .from('evaluations')
+      .select('organization_id')
+      .eq('id', attempt.evaluation_id)
+      .single()
+
+    const isOwner = attempt.student_id === user.id
+    const isStaff = STAFF_ROLE_IDS.includes(callerProfile.role_id) &&
+                    callerProfile.organization_id === evalOrg?.organization_id
+
+    if (!isOwner && !isStaff) {
+      return NextResponse.json({ error: 'Sin permisos para acceder a este intento.' }, { status: 403 })
+    }
 
     // ── Obtener respuestas con is_correct y skill de la pregunta ──────────
     const { data: answers } = await sb

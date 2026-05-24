@@ -32,6 +32,7 @@ const NAV: Record<RoleName, NavItem[]> = {
     { href: '/director/users',         label: 'Usuarios',           icon: I.user  },
     { href: '/director/question-bank', label: 'Banco de preguntas', icon: I.book  },
     { href: '/director/analytics',     label: 'Analytics',          icon: I.chart },
+    { href: '/director/audit',         label: 'Actividad',          icon: I.check },
   ],
   coordinator: [
     { href: '/coordinator',               label: 'Dashboard',          icon: I.grid  },

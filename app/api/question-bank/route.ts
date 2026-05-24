@@ -5,8 +5,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { cookies } from 'next/headers'
+import { rateLimit, getClientIp } from '@/lib/rate-limit'
 
 const ALLOWED_ROLES = [1, 2, 5]
+const RATE_LIMIT_GET  = { windowMs: 60_000, max: 60 }  // lectura: más permisivo
+const RATE_LIMIT_POST = { windowMs: 60_000, max: 20 }  // escritura: más restrictivo
 
 async function getSupabase() {
   const cookieStore = await cookies()
@@ -28,6 +31,14 @@ async function getSupabase() {
 
 // GET /api/question-bank?skill=grammar&cefr=B1&difficulty=medium&topic=present_simple&q=texto
 export async function GET(request: NextRequest) {
+  const rl = rateLimit(`qbank-get:${getClientIp(request)}`, RATE_LIMIT_GET)
+  if (!rl.success) {
+    return NextResponse.json(
+      { error: `Demasiadas solicitudes. Intentá de nuevo en ${Math.ceil((rl.resetAt - Date.now()) / 60000)} min.` },
+      { status: 429 }
+    )
+  }
+
   const supabase = await getSupabase()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'No autenticado.' }, { status: 401 })
@@ -70,6 +81,14 @@ export async function GET(request: NextRequest) {
 
 // POST /api/question-bank — crear pregunta en el banco
 export async function POST(request: NextRequest) {
+  const rl = rateLimit(`qbank-post:${getClientIp(request)}`, RATE_LIMIT_POST)
+  if (!rl.success) {
+    return NextResponse.json(
+      { error: `Demasiadas solicitudes. Intentá de nuevo en ${Math.ceil((rl.resetAt - Date.now()) / 60000)} min.` },
+      { status: 429 }
+    )
+  }
+
   const supabase = await getSupabase()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'No autenticado.' }, { status: 401 })

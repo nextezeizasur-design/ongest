@@ -2,12 +2,21 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { rateLimit, getClientIp } from '@/lib/rate-limit'
 
 // Roles staff que pueden generar recomendaciones para cualquier alumno de su org
 const STAFF_ROLE_IDS = [1, 2, 5] // director, coordinator, teacher
+const RATE_LIMIT = { windowMs: 60_000, max: 20 } // 20 por minuto por IP
 
 export async function POST(req: NextRequest) {
   try {
+    const rl = rateLimit(`recommendations:${getClientIp(req)}`, RATE_LIMIT)
+    if (!rl.success) {
+      return NextResponse.json(
+        { error: `Demasiadas solicitudes. Intentá de nuevo en ${Math.ceil((rl.resetAt - Date.now()) / 60000)} min.` },
+        { status: 429 }
+      )
+    }
     const { attempt_id } = await req.json()
     if (!attempt_id) return NextResponse.json({ error: 'attempt_id required' }, { status: 400 })
 

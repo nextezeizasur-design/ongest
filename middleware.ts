@@ -89,8 +89,13 @@ export async function middleware(request: NextRequest) {
     }
 
   } catch (e) {
-    // Si el middleware falla por cualquier razón, dejar pasar la request
+    // Fallar de forma segura: si algo sale mal verificando la sesión,
+    // redirigir al login en lugar de dejar pasar la request sin autenticar
     console.error('Middleware error:', e)
+    const { pathname } = request.nextUrl
+    if (!PUBLIC_ROUTES.some(r => pathname.startsWith(r))) {
+      return NextResponse.redirect(new URL('/login', request.url))
+    }
   }
 
   return response

@@ -52,11 +52,12 @@ export async function POST(request: NextRequest) {
     const copied: string[] = []
 
     for (const bankId of bank_question_ids) {
-      // 1. Obtener pregunta del banco con sus opciones
+      // 1. Obtener pregunta del banco — verificar que pertenece a la misma org
       const { data: bankQ } = await sb
         .from('question_bank')
         .select('*, question_bank_options(*)')
         .eq('id', bankId)
+        .eq('organization_id', profile.organization_id)  // aislamiento multi-tenant
         .single()
 
       if (!bankQ) continue

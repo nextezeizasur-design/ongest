@@ -293,21 +293,21 @@ export default function CohortHeatmap({ students, evals, attempts }: Props) {
       )}
 
       {/* ── Leyenda ───────────────────────────────────────────────────────── */}
-      <div className="flex flex-wrap items-center gap-3 px-5 py-3 border-t border-gray-100 bg-gray-50/50">
-        <span className="text-xs text-gray-400 font-medium">Leyenda:</span>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-5 py-3 border-t border-gray-100 bg-gray-50/50">
+        <span className="text-xs text-gray-400 font-medium flex-shrink-0">Leyenda:</span>
         {[
-          { bg: 'bg-green-100', text: 'text-green-700', label: 'Aprobado ≥80%' },
-          { bg: 'bg-green-50',  text: 'text-green-600', label: 'Aprobado' },
-          { bg: 'bg-amber-50',  text: 'text-amber-700', label: 'Cerca del límite' },
-          { bg: 'bg-red-50',    text: 'text-red-600',   label: 'Desaprobado' },
-          { bg: 'bg-amber-50',  text: 'text-amber-600', label: '✓ Entregado' },
-          { bg: 'bg-gray-50',   text: 'text-gray-300',  label: '— Sin intentar' },
+          { bg: 'bg-green-100', text: 'text-green-700', pill: '95%', label: 'Aprobado ≥80%'   },
+          { bg: 'bg-green-50',  text: 'text-green-600', pill: '70%', label: 'Aprobado'         },
+          { bg: 'bg-amber-50',  text: 'text-amber-700', pill: '52%', label: 'Cerca del límite' },
+          { bg: 'bg-red-50',    text: 'text-red-600',   pill: '30%', label: 'Desaprobado'      },
+          { bg: 'bg-amber-50',  text: 'text-amber-600', pill: '✓',   label: 'Entregado'        },
+          { bg: 'bg-gray-50',   text: 'text-gray-300',  pill: '—',   label: 'Sin intentar'     },
         ].map(item => (
-          <span key={item.label} className="flex items-center gap-1.5">
-            <span className={`inline-flex items-center justify-center w-8 h-5 rounded text-xs font-semibold ${item.bg} ${item.text}`}>
-              {item.label.split(' ')[0]}
+          <span key={item.label} className="flex items-center gap-1.5 flex-shrink-0">
+            <span className={`inline-flex items-center justify-center w-10 h-6 rounded text-xs font-semibold ${item.bg} ${item.text}`}>
+              {item.pill}
             </span>
-            <span className="text-xs text-gray-400">{item.label}</span>
+            <span className="text-xs text-gray-500">{item.label}</span>
           </span>
         ))}
       </div>

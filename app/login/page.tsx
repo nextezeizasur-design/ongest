@@ -90,15 +90,12 @@ export default function LoginPage() {
 
         {/* Header marca */}
         <div className="mb-8 text-center">
-          <div
-            className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl"
-            style={{ background: brandColor }}
-          >
-            <svg viewBox="0 0 28 28" fill="none" className="h-7 w-7" stroke="white" strokeWidth={1.6}>
-              <path d="M14 3L4 8.5l10 5.5 10-5.5L14 3z"/>
-              <path d="M4 19l10 5.5 10-5.5"/>
-              <path d="M4 13.5l10 5.5 10-5.5"/>
-            </svg>
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center">
+            <img
+              src="/icons/icon-192.png"
+              alt="OnGest"
+              className="h-16 w-16 rounded-2xl object-cover"
+            />
           </div>
           <p className="text-xs font-semibold tracking-widest uppercase mb-1" style={{ color: brandColor }}>
             OnGest

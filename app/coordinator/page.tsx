@@ -45,7 +45,9 @@ export default async function CoordinatorDashboard() {
     .select('id, first_name, last_name')
     .eq('organization_id', orgId)
 
-  const profileMap = new Map((profilesRaw ?? []).map((p: any) => [p.id, p]))
+  const profileMap = new Map<string, { id: string; first_name: string; last_name: string }>(
+    (profilesRaw ?? []).map((p: any) => [p.id, p])
+  )
 
   const heatmapStudents = (enrollmentsRaw ?? [])
     .filter((e: any) => profileMap.has(e.student_id) && e.courses)

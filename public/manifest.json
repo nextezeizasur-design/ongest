@@ -1,0 +1,25 @@
+{
+  "name": "OnGest — Evaluaciones",
+  "short_name": "OnGest",
+  "description": "Plataforma de evaluaciones de inglés online",
+  "start_url": "/exam",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#642f8d",
+  "theme_color": "#642f8d",
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -279,6 +279,16 @@ export default function GradePage({ params }: { params: Promise<{ id: string }> 
       setSaving(false)
 
       if (finalize) {
+        // Emitir o actualizar el certificado con el score final corregido
+        try {
+          await sb.from('certificates').delete().eq('attempt_id', attemptId)
+          await fetch('/api/certificates/issue', {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({ attempt_id: attemptId }),
+          })
+        } catch { /* no crítico */ }
+
         setDone(true)
         router.refresh()
         await new Promise(res => setTimeout(res, 400))

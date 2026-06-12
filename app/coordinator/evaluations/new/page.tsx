@@ -241,6 +241,12 @@ export default function NewEvaluationPage() {
   async function handleSave(status: 'draft' | 'published') {
     if (!title.trim()) { setError('El título es obligatorio.'); return }
     if (questions.length === 0) { setError('Agregá al menos una pregunta.'); return }
+    // Validar que todas las preguntas tengan enunciado
+    const emptyBodyIdx = questions.findIndex(q => !q.body.trim())
+    if (emptyBodyIdx !== -1) {
+      setError(`La pregunta ${emptyBodyIdx + 1} no tiene enunciado. Completala antes de guardar.`)
+      return
+    }
     setSaving(true); setError(null)
 
     const { data: { user } } = await supabase.auth.getUser()
@@ -276,6 +282,7 @@ export default function NewEvaluationPage() {
       )
     }
 
+    let questionErrors = 0
     for (let i = 0; i < questions.length; i++) {
       const q = questions[i]
       const { data: savedQ, error: qErr } = await sb.from('questions').insert({
@@ -289,7 +296,7 @@ export default function NewEvaluationPage() {
         speaking_time_sec: q.speaking_time_sec ?? null,
       }).select().single()
 
-      if (qErr || !savedQ) continue
+      if (qErr || !savedQ) { questionErrors++; continue }
       if (q.options.length > 0) {
         await sb.from('options').insert(
           q.options.map((o: any, oi: number) => ({
@@ -298,6 +305,14 @@ export default function NewEvaluationPage() {
           }))
         )
       }
+    }
+
+    // Si todas las preguntas fallaron, mostrar error y no redirigir
+    if (questionErrors === questions.length) {
+      await sb.from('evaluations').delete().eq('id', ev.id)
+      setError('Error al guardar las preguntas. Verificá que todos los tipos de pregunta estén configurados correctamente.')
+      setSaving(false)
+      return
     }
 
     // ── Toast + redirect ──

@@ -271,7 +271,7 @@ export default function NewEvaluationPage() {
       created_by:      user.id,
     }).select().single()
 
-    if (evErr || !ev) { setError('Error: ' + evErr?.message); setSaving(false); return }
+    if (evErr || !ev) { console.error('SUPABASE INSERT ERROR:', JSON.stringify(evErr)); setError('Error al crear evaluación: ' + (evErr?.message ?? evErr?.code ?? 'sin detalles')); setSaving(false); return }
     setSavedEvalId(ev.id)
 
     if (selectedCourses.length > 0) {

@@ -381,12 +381,16 @@ function ExamPage({ params }: { params: Promise<{ id: string }> }) {
         body:    JSON.stringify({ attempt_id: att.id }),
       }).catch(() => {})
 
-      // Emitir certificado siempre (aprobado o desaprobado) — fire & forget
-      fetch('/api/certificates/issue', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ attempt_id: att.id }),
-      }).catch(() => {})
+      // Emitir certificado solo si NO hay preguntas de speaking (que requieren corrección manual)
+      // Si hay speaking, el certificado se emite cuando el docente finaliza la corrección
+      const hasSpeaking = questions.some((q: any) => q.q_type === 'speaking')
+      if (!hasSpeaking) {
+        fetch('/api/certificates/issue', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ attempt_id: att.id }),
+        }).catch(() => {})
+      }
 
       router.push('/results')
 

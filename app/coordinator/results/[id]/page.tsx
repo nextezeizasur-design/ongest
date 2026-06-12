@@ -251,6 +251,18 @@ export default function CoordinatorGradePage({ params }: { params: Promise<{ id:
 
       setSaving(false)
       if (finalize) {
+        // Emitir o actualizar el certificado con el score final corregido
+        try {
+          // Primero borrar el certificado previo si existía con score incorrecto
+          await sb.from('certificates').delete().eq('attempt_id', attemptId)
+          // Emitir el nuevo con el score correcto
+          await fetch('/api/certificates/issue', {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({ attempt_id: attemptId }),
+          })
+        } catch { /* no crítico */ }
+
         setDone(true)
         router.refresh()
         await new Promise(res => setTimeout(res, 400))

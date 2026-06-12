@@ -267,8 +267,6 @@ export default function NewEvaluationPage() {
       pass_score:      passScore,
       available_from:  availFrom  || null,
       available_until: availUntil || null,
-      is_adaptive:     isAdaptive,
-      adaptive_length: isAdaptive ? adaptiveLength : null,
       status,
       created_by:      user.id,
     }).select().single()

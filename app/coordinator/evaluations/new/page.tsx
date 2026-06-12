@@ -9,6 +9,7 @@ import QuestionDifficultyEditor from '@/components/shared/QuestionDifficultyEdit
 import QuestionBankPage from '@/components/shared/QuestionBankPage'
 import ExerciseEditor from '@/components/coordinator/ExerciseEditor'
 import { useConfirm } from '@/hooks/useConfirm'
+import { useToast } from '@/components/shared/Toast'
 
 interface QuestionDraft {
   id: string
@@ -56,9 +57,10 @@ const PUBLISHERS = [
   'Oxford Solutions', 'Cambridge Prepare', 'Otro',
 ]
 
-export default function NewEvaluationPage() {
+export default function NewEvaluationPage({ redirectTo }: { redirectTo?: string } = {}) {
   const router   = useRouter()
   const supabase = createClient()
+  const toast    = useToast()
 
   // Evaluation meta
   const [title,          setTitle]          = useState('')
@@ -284,11 +286,29 @@ export default function NewEvaluationPage() {
       }
     }
 
-    const { data: roleData } = await (supabase as any)
-      .from('profiles').select('role_id').eq('id', user.id).single()
-    const isDirector = roleData?.role_id === 1
-    router.push(isDirector ? '/director/evaluations' : '/coordinator/evaluations')
-    router.refresh()
+    // ── Toast + redirect ──
+    if (status === 'published') {
+      toast.success('Evaluación publicada correctamente', `"${title.trim()}" ya está disponible para los alumnos.`)
+    } else {
+      toast.info('Borrador guardado', `"${title.trim()}" guardado como borrador.`)
+    }
+
+    // Determinar destino según prop o rol
+    let destination = redirectTo ?? null
+    if (!destination) {
+      const { data: roleData } = await (supabase as any)
+        .from('profiles').select('role_id').eq('id', user.id).single()
+      destination = roleData?.role_id === 1
+        ? '/director/evaluations'
+        : roleData?.role_id === 5
+        ? '/teacher/evaluations'
+        : '/coordinator/evaluations'
+    }
+
+    // Pequeño delay para que el toast sea visible antes de navegar
+    setTimeout(() => {
+      router.push(destination!)
+    }, 1200)
   }
 
   const importCheckedCount = importedQs?.filter(q => q._checked).length ?? 0
@@ -297,7 +317,7 @@ export default function NewEvaluationPage() {
     <div className="flex flex-1 flex-col overflow-hidden">
       <header className="flex h-14 flex-shrink-0 items-center justify-between border-b border-gray-200 bg-white px-6">
         <div className="flex items-center gap-3">
-          <a href="/coordinator/evaluations" className="text-gray-400 hover:text-gray-600 transition-colors">
+          <a href={redirectTo ?? "/coordinator/evaluations"} className="text-gray-400 hover:text-gray-600 transition-colors">
             <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.7} className="h-5 w-5">
               <path d="M12 4L6 10l6 6"/>
             </svg>

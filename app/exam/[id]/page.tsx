@@ -383,7 +383,7 @@ function ExamPage({ params }: { params: Promise<{ id: string }> }) {
 
       // Emitir certificado solo si NO hay preguntas de speaking (que requieren corrección manual)
       // Si hay speaking, el certificado se emite cuando el docente finaliza la corrección
-      const hasSpeaking = questions.some((q: any) => q.q_type === 'speaking')
+      const hasSpeaking = exam.questions.some((q: any) => q.q_type === 'speaking')
       if (!hasSpeaking) {
         fetch('/api/certificates/issue', {
           method:  'POST',

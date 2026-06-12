@@ -18,7 +18,7 @@ export async function getEvaluationStats(orgId: string) {
     .from('v_evaluation_stats')
     .select('*')
     .eq('organization_id', orgId)
-    .order('available_until', { ascending: true })
+    .order('created_at', { ascending: false })
 
   return { data: (data ?? []) as EvaluationStats[], error }
 }

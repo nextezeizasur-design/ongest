@@ -517,40 +517,20 @@ export default function SpeakingQuestion({
           </div>
         )}
 
-        {/* Score automático */}
-        {score !== null && (
-          <div className={`rounded-xl p-4 border ${
-            score >= 60 ? 'bg-green-50 border-green-200' : 'bg-amber-50 border-amber-200'
-          }`}>
-            <div className="flex items-center gap-3 mb-2">
-              <div className={`text-2xl font-bold ${score >= 60 ? 'text-green-700' : 'text-amber-700'}`}>
-                {Math.round(score)}%
-              </div>
-              <div>
-                <p className={`text-sm font-medium ${score >= 60 ? 'text-green-800' : 'text-amber-800'}`}>
-                  {score >= 60 ? 'Buena respuesta' : 'Respuesta registrada'}
-                </p>
-                <p className={`text-xs ${score >= 60 ? 'text-green-600' : 'text-amber-600'}`}>
-                  {feedback}
-                </p>
-              </div>
+        {/* Confirmación de grabación guardada */}
+        <div className="rounded-xl p-4 border bg-green-50 border-green-200">
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">✅</span>
+            <div>
+              <p className="text-sm font-medium text-green-800">
+                Grabación guardada correctamente
+              </p>
+              <p className="text-xs text-green-600">
+                El docente escuchará tu respuesta y dejará una nota.
+              </p>
             </div>
-            {keywords.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 mt-2">
-                {keywords.map(kw => {
-                  const found = keywordsFound.some(f => f.toLowerCase() === kw.toLowerCase())
-                  return (
-                    <span key={kw} className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                      found ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-500 line-through'
-                    }`}>
-                      {kw}
-                    </span>
-                  )
-                })}
-              </div>
-            )}
           </div>
-        )}
+        </div>
 
         {/* Preview de audio para el alumno */}
         {savedAudioUrl && (

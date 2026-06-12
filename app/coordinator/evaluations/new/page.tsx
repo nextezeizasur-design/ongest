@@ -57,10 +57,11 @@ const PUBLISHERS = [
   'Oxford Solutions', 'Cambridge Prepare', 'Otro',
 ]
 
-export default function NewEvaluationPage({ redirectTo }: { redirectTo?: string } = {}) {
+export default function NewEvaluationPage() {
   const router   = useRouter()
   const supabase = createClient()
   const toast    = useToast()
+  const [redirectTo, setRedirectTo] = useState('/coordinator/evaluations')
 
   // Evaluation meta
   const [title,          setTitle]          = useState('')
@@ -105,6 +106,19 @@ export default function NewEvaluationPage({ redirectTo }: { redirectTo?: string 
       setCourses(data ?? [])
     }
     loadCourses()
+  }, [])
+
+  useEffect(() => {
+    async function detectRole() {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      const { data } = await (supabase as any)
+        .from('profiles').select('role_id').eq('id', user.id).single()
+      if (data?.role_id === 1) setRedirectTo('/director/evaluations')
+      else if (data?.role_id === 5) setRedirectTo('/teacher/evaluations')
+      else setRedirectTo('/coordinator/evaluations')
+    }
+    detectRole()
   }, [])
 
   async function removeQuestion(id: string) {
@@ -293,21 +307,9 @@ export default function NewEvaluationPage({ redirectTo }: { redirectTo?: string 
       toast.info('Borrador guardado', `"${title.trim()}" guardado como borrador.`)
     }
 
-    // Determinar destino según prop o rol
-    let destination = redirectTo ?? null
-    if (!destination) {
-      const { data: roleData } = await (supabase as any)
-        .from('profiles').select('role_id').eq('id', user.id).single()
-      destination = roleData?.role_id === 1
-        ? '/director/evaluations'
-        : roleData?.role_id === 5
-        ? '/teacher/evaluations'
-        : '/coordinator/evaluations'
-    }
-
     // Pequeño delay para que el toast sea visible antes de navegar
     setTimeout(() => {
-      router.push(destination!)
+      router.push(redirectTo)
     }, 1200)
   }
 
@@ -317,7 +319,7 @@ export default function NewEvaluationPage({ redirectTo }: { redirectTo?: string 
     <div className="flex flex-1 flex-col overflow-hidden">
       <header className="flex h-14 flex-shrink-0 items-center justify-between border-b border-gray-200 bg-white px-6">
         <div className="flex items-center gap-3">
-          <a href={redirectTo ?? "/coordinator/evaluations"} className="text-gray-400 hover:text-gray-600 transition-colors">
+          <a href={redirectTo} className="text-gray-400 hover:text-gray-600 transition-colors">
             <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.7} className="h-5 w-5">
               <path d="M12 4L6 10l6 6"/>
             </svg>

@@ -130,6 +130,7 @@ export default function Sidebar({ role, name, email }: SidebarProps) {
             const active = pathname === item.href ||
               (item.href !== '/' + role &&
                item.href !== '/exam' &&
+               item.href !== '/results' &&
                pathname.startsWith(item.href + '/'))
             return (
               <Link key={item.href} href={item.href}

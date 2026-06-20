@@ -62,16 +62,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Sin permisos para emitir este certificado.' }, { status: 403 })
     }
 
-    // Verificar que no existe ya un certificado para este intento
-    const { data: existing } = await sb
+    // Si ya existe un certificado para este intento, borrarlo para re-emitirlo
+    // con el score actualizado (importante para exámenes con speaking corregidos manualmente)
+    await sb
       .from('certificates')
-      .select('id')
+      .delete()
       .eq('attempt_id', attempt_id)
-      .maybeSingle()
-
-    if (existing) {
-      return NextResponse.json({ skipped: true, certificate_id: existing.id })
-    }
 
     // Obtener nombre del alumno
     const { data: profile } = await sb

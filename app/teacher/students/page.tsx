@@ -30,12 +30,7 @@ export default async function TeacherStudentsPage() {
   const { data: enrollments } = courseIds.length > 0
     ? await sb
         .from('enrollments')
-        .select(`
-          course_id,
-          profiles!enrollments_student_id_fkey(
-            id, first_name, last_name, email, is_active
-          )
-        `)
+        .select('course_id, profiles(id, first_name, last_name, email, is_active)')
         .in('course_id', courseIds)
     : { data: [] }
 

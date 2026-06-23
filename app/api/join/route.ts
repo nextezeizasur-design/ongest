@@ -38,7 +38,7 @@ export async function POST(request: Request) {
 
     const cleanEmail = email.toLowerCase().trim()
 
-    // 2. Verificar duplicado en Auth directamente
+    // 2. Verificar duplicado en Auth
     const { data: authList } = await supabaseAdmin.auth.admin.listUsers()
     const existsInAuth = authList?.users?.some(u => u.email === cleanEmail)
     if (existsInAuth) {
@@ -57,10 +57,12 @@ export async function POST(request: Request) {
     })
 
     if (authError || !authData.user) {
+      console.error('[/api/join] Auth createUser error:', authError)
       return NextResponse.json({ error: 'Error al crear la cuenta' }, { status: 500 })
     }
 
     const userId = authData.user.id
+    console.log('[/api/join] Usuario creado en Auth:', userId)
 
     // 4. Insertar profile + enrollment via función SECURITY DEFINER
     const { error: fnError } = await supabaseAdmin.rpc('fn_register_student', {
@@ -74,8 +76,15 @@ export async function POST(request: Request) {
 
     if (fnError) {
       await supabaseAdmin.auth.admin.deleteUser(userId)
-      console.error('[fn_register_student] Error:', fnError)
-      return NextResponse.json({ error: 'Error al registrar el alumno' }, { status: 500 })
+      console.error('[fn_register_student] Error completo:', JSON.stringify(fnError))
+      console.error('[fn_register_student] userId:', userId)
+      console.error('[fn_register_student] org_id:', course.organization_id)
+      console.error('[fn_register_student] course_id:', course.id)
+      return NextResponse.json({
+        error: 'Error al registrar el alumno',
+        detail: fnError.message,
+        code: fnError.code
+      }, { status: 500 })
     }
 
     return NextResponse.json({
@@ -83,8 +92,11 @@ export async function POST(request: Request) {
       courseName: course.name,
     })
 
-  } catch (err) {
+  } catch (err: any) {
     console.error('[/api/join] Error inesperado:', err)
-    return NextResponse.json({ error: 'Error interno del servidor' }, { status: 500 })
+    return NextResponse.json({
+      error: 'Error interno del servidor',
+      detail: err?.message
+    }, { status: 500 })
   }
 }

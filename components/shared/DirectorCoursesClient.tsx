@@ -1,7 +1,6 @@
 'use client'
 
 // components/shared/DirectorCoursesClient.tsx
-// Lista de cursos en tarjetas — director y coordinator
 
 import { useState } from 'react'
 import Link from 'next/link'
@@ -18,10 +17,35 @@ interface Teacher {
 interface Props {
   courses:     CourseEditData[]
   counts:      Record<string, number>
-  recCounts?:  Record<string, number>   // grabaciones por curso
+  recCounts?:  Record<string, number>
   teachers:    Teacher[]
   baseHref:    string
   canDelete?:  boolean
+}
+
+function JoinCodeBadge({ code }: { code?: string }) {
+  const [copied, setCopied] = useState(false)
+  if (!code) return null
+
+  function handleCopy() {
+    navigator.clipboard.writeText(code)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  return (
+    <div className="flex items-center gap-2 mt-3 bg-purple-50 border border-purple-100 rounded-lg px-3 py-2">
+      <span className="text-xs text-purple-500 font-medium">Código de ingreso:</span>
+      <span className="font-mono font-bold text-purple-800 tracking-widest text-sm">{code}</span>
+      <button
+        onClick={handleCopy}
+        className="ml-auto text-xs px-2 py-0.5 rounded font-medium transition-colors"
+        style={{ backgroundColor: copied ? '#16a34a' : '#642f8d', color: 'white' }}
+      >
+        {copied ? '✓ Copiado' : 'Copiar'}
+      </button>
+    </div>
+  )
 }
 
 export default function DirectorCoursesClient({
@@ -52,15 +76,12 @@ export default function DirectorCoursesClient({
           return (
             <div key={course.id} className="bg-white rounded-2xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow flex flex-col">
 
-              {/* Área de contenido principal */}
               <div className="p-5 flex-1">
-                {/* Header: nombre + nivel */}
                 <div className="flex items-start justify-between gap-2 mb-3">
                   <h3 className="font-semibold text-gray-900 text-base leading-snug">{course.name}</h3>
                   {cefr && <CefrPill code={cefr.code as any} />}
                 </div>
 
-                {/* Docente */}
                 <div className="flex items-center gap-2 mb-3">
                   {teacher ? (
                     <>
@@ -77,8 +98,7 @@ export default function DirectorCoursesClient({
                   )}
                 </div>
 
-                {/* Horario */}
-                <div className="space-y-1 mb-4">
+                <div className="space-y-1 mb-3">
                   {course.schedule_days && (
                     <div className="flex items-center gap-2 text-sm text-gray-600">
                       <span>📅</span><span>{course.schedule_days}</span>
@@ -91,8 +111,10 @@ export default function DirectorCoursesClient({
                   )}
                 </div>
 
-                {/* Stats */}
-                <div className="flex items-center gap-4 pt-3 border-t border-gray-100">
+                {/* Código de ingreso para alumnos */}
+                <JoinCodeBadge code={(course as any).join_code} />
+
+                <div className="flex items-center gap-4 pt-3 mt-3 border-t border-gray-100">
                   <div className="flex items-center gap-1.5 text-sm text-gray-500">
                     <svg className="h-4 w-4" fill="none" viewBox="0 0 20 20" stroke="currentColor" strokeWidth={1.7}>
                       <circle cx="8" cy="6" r="3"/>
@@ -110,7 +132,6 @@ export default function DirectorCoursesClient({
                 </div>
               </div>
 
-              {/* Acciones rápidas */}
               <div className="border-t border-gray-100 grid grid-cols-3 divide-x divide-gray-100">
                 <Link
                   href={`${baseHref}/courses/${course.id}?tab=recordings`}
@@ -132,7 +153,6 @@ export default function DirectorCoursesClient({
                 </button>
               </div>
 
-              {/* Footer: ver detalle + eliminar */}
               <div className={`border-t border-gray-100 flex ${canDelete ? 'justify-between' : 'justify-center'} items-center px-4 py-2`}>
                 <Link
                   href={`${baseHref}/courses/${course.id}`}

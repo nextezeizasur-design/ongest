@@ -4,7 +4,7 @@ import { NextResponse, type NextRequest } from 'next/server'
 
 type CookieToSet = { name: string; value: string; options?: Record<string, unknown> }
 
-const RUTAS_PUBLICAS = ['/login', '/join']
+const RUTAS_PUBLICAS = ['/login', '/join', '/api/join']
 
 const INICIO_POR_ROL: Record<string, string> = {
   director:    '/director',

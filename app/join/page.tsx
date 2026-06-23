@@ -1,7 +1,7 @@
 // RUTA: app/join/page.tsx
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { createClient } from '@supabase/supabase-js'
 import { useRouter } from 'next/navigation'
 
@@ -9,6 +9,7 @@ type Step = 'code' | 'register' | 'success'
 
 export default function JoinPage() {
   const router = useRouter()
+  const isSubmitting = useRef(false)
 
   const [step, setStep] = useState<Step>('code')
   const [code, setCode] = useState('')
@@ -22,10 +23,7 @@ export default function JoinPage() {
   const [error, setError] = useState('')
 
   async function handleValidateCode() {
-    if (!code.trim()) {
-      setError('Ingresá el código de curso')
-      return
-    }
+    if (!code.trim()) { setError('Ingresá el código de curso'); return }
     setLoading(true)
     setError('')
 
@@ -42,78 +40,61 @@ export default function JoinPage() {
 
     setLoading(false)
 
-    if (dbError || !data) {
-      setError('Código inválido. Verificá que esté bien escrito.')
-      return
-    }
-
-    if (!data.is_active) {
-      setError('Este curso ya no está activo. Consultá a tu instituto.')
-      return
-    }
+    if (dbError || !data) { setError('Código inválido. Verificá que esté bien escrito.'); return }
+    if (!data.is_active) { setError('Este curso ya no está activo. Consultá a tu instituto.'); return }
 
     setCourseName(data.name)
     setStep('register')
   }
 
   async function handleRegister() {
+    if (isSubmitting.current) return
     if (!firstName.trim() || !lastName.trim() || !email.trim() || !password) {
       setError('Completá todos los campos')
       return
     }
+
+    isSubmitting.current = true
     setLoading(true)
     setError('')
 
-    // 1. Crear cuenta via API route
-    const res = await fetch('/api/join', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        code: code.toUpperCase().trim(),
-        firstName: firstName.trim(),
-        lastName: lastName.trim(),
-        email: email.trim(),
-        password,
-      }),
-    })
+    try {
+      const res = await fetch('/api/join', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          code: code.toUpperCase().trim(),
+          firstName: firstName.trim(),
+          lastName: lastName.trim(),
+          email: email.trim(),
+          password,
+        }),
+      })
 
-    const data = await res.json()
+      const data = await res.json()
 
-    if (!res.ok) {
+      if (!res.ok) {
+        setError(data.error ?? 'Error al crear la cuenta')
+        return
+      }
+
+      const supabase = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+      )
+
+      await supabase.auth.signInWithPassword({ email: email.trim(), password })
+      setStep('success')
+      setTimeout(() => router.push('/exam'), 1500)
+
+    } finally {
       setLoading(false)
-      setError(data.error ?? 'Error al crear la cuenta')
-      return
+      isSubmitting.current = false
     }
-
-    // 2. Iniciar sesión usando el cliente de Supabase directamente
-    //    (NO via /login page — eso es una página Next.js, no una API)
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    )
-
-    const { error: signInError } = await supabase.auth.signInWithPassword({
-      email: email.trim(),
-      password,
-    })
-
-    setLoading(false)
-
-    if (signInError) {
-      // Cuenta creada pero no se pudo loguear automáticamente
-      // Mandamos al login con mensaje
-      router.push('/login?registered=1')
-      return
-    }
-
-    setStep('success')
-    setTimeout(() => router.push('/exam'), 1500)
   }
 
   return (
     <main className="min-h-screen bg-gray-50 flex flex-col items-center justify-center px-4">
-
-      {/* Logo */}
       <div className="mb-8 text-center">
         <div className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-3"
           style={{ backgroundColor: '#642f8d' }}>
@@ -125,20 +106,14 @@ export default function JoinPage() {
 
       <div className="w-full max-w-md bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
 
-        {/* PASO 1: código */}
         {step === 'code' && (
           <>
             <div className="mb-6">
               <h2 className="text-lg font-bold text-gray-800">Ingresá a tu curso</h2>
-              <p className="text-sm text-gray-500 mt-1">
-                Tu docente o secretaría te compartió un código de 6 caracteres.
-              </p>
+              <p className="text-sm text-gray-500 mt-1">Tu docente o secretaría te compartió un código de 6 caracteres.</p>
             </div>
-
             <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Código de curso
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Código de curso</label>
               <input
                 type="text"
                 value={code}
@@ -150,13 +125,7 @@ export default function JoinPage() {
                 style={{ '--tw-ring-color': '#642f8d' } as React.CSSProperties}
               />
             </div>
-
-            {error && (
-              <p className="text-sm text-red-600 mb-4 flex items-center gap-1">
-                <span>⚠</span> {error}
-              </p>
-            )}
-
+            {error && <p className="text-sm text-red-600 mb-4 flex items-center gap-1"><span>⚠</span> {error}</p>}
             <button
               onClick={handleValidateCode}
               disabled={loading}
@@ -165,24 +134,18 @@ export default function JoinPage() {
             >
               {loading ? 'Verificando...' : 'Continuar →'}
             </button>
-
             <p className="text-center text-sm text-gray-400 mt-6">
               ¿Ya tenés cuenta?{' '}
-              <a href="/login" className="font-medium" style={{ color: '#642f8d' }}>
-                Iniciar sesión
-              </a>
+              <a href="/login" className="font-medium" style={{ color: '#642f8d' }}>Iniciar sesión</a>
             </p>
           </>
         )}
 
-        {/* PASO 2: datos personales */}
         {step === 'register' && (
           <>
             <div className="mb-6">
-              <button
-                onClick={() => { setStep('code'); setError('') }}
-                className="text-sm text-gray-400 hover:text-gray-600 mb-3 flex items-center gap-1"
-              >
+              <button onClick={() => { setStep('code'); setError('') }}
+                className="text-sm text-gray-400 hover:text-gray-600 mb-3 flex items-center gap-1">
                 ← Cambiar código
               </button>
               <div className="flex items-center gap-2 bg-purple-50 border border-purple-100 rounded-lg px-3 py-2 mb-4">
@@ -200,46 +163,31 @@ export default function JoinPage() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Nombre</label>
-                  <input
-                    type="text"
-                    value={firstName}
+                  <input type="text" value={firstName}
                     onChange={e => { setFirstName(e.target.value); setError('') }}
                     placeholder="Juan"
                     className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:border-transparent"
-                    style={{ '--tw-ring-color': '#642f8d' } as React.CSSProperties}
-                  />
+                    style={{ '--tw-ring-color': '#642f8d' } as React.CSSProperties} />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Apellido</label>
-                  <input
-                    type="text"
-                    value={lastName}
+                  <input type="text" value={lastName}
                     onChange={e => { setLastName(e.target.value); setError('') }}
                     placeholder="García"
                     className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:border-transparent"
-                    style={{ '--tw-ring-color': '#642f8d' } as React.CSSProperties}
-                  />
+                    style={{ '--tw-ring-color': '#642f8d' } as React.CSSProperties} />
                 </div>
               </div>
-
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Correo electrónico
-                </label>
-                <input
-                  type="email"
-                  value={email}
+                <label className="block text-sm font-medium text-gray-700 mb-1">Correo electrónico</label>
+                <input type="email" value={email}
                   onChange={e => { setEmail(e.target.value); setError('') }}
                   placeholder="tu@email.com"
                   className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:border-transparent"
-                  style={{ '--tw-ring-color': '#642f8d' } as React.CSSProperties}
-                />
+                  style={{ '--tw-ring-color': '#642f8d' } as React.CSSProperties} />
               </div>
-
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Contraseña
-                </label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Contraseña</label>
                 <div className="relative">
                   <input
                     type={showPassword ? 'text' : 'password'}
@@ -250,22 +198,15 @@ export default function JoinPage() {
                     className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:border-transparent pr-10"
                     style={{ '--tw-ring-color': '#642f8d' } as React.CSSProperties}
                   />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(v => !v)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-xs"
-                  >
+                  <button type="button" onClick={() => setShowPassword(v => !v)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-xs">
                     {showPassword ? 'Ocultar' : 'Ver'}
                   </button>
                 </div>
               </div>
             </div>
 
-            {error && (
-              <p className="text-sm text-red-600 mt-4 flex items-center gap-1">
-                <span>⚠</span> {error}
-              </p>
-            )}
+            {error && <p className="text-sm text-red-600 mt-4 flex items-center gap-1"><span>⚠</span> {error}</p>}
 
             <button
               onClick={handleRegister}
@@ -278,20 +219,16 @@ export default function JoinPage() {
           </>
         )}
 
-        {/* PASO 3: éxito */}
         {step === 'success' && (
           <div className="text-center py-4">
             <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
               <span className="text-3xl">✓</span>
             </div>
             <h2 className="text-lg font-bold text-gray-800 mb-1">¡Cuenta creada!</h2>
-            <p className="text-sm text-gray-500 mb-2">
-              Estás inscripto en <strong>{courseName}</strong>.
-            </p>
+            <p className="text-sm text-gray-500 mb-2">Estás inscripto en <strong>{courseName}</strong>.</p>
             <p className="text-xs text-gray-400">Redirigiendo a tu panel...</p>
           </div>
         )}
-
       </div>
 
       <p className="text-xs text-gray-300 mt-6">Powered by OnGest</p>

@@ -1,106 +1,61 @@
-import { createServerClient, type CookieOptions } from '@supabase/ssr'
+// RUTA: next-ezeiza/middleware.ts
+import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
-const PUBLIC_ROUTES = ['/login', '/register', '/api/auth', '/api/org', '/api/register', '/verify']
+type CookieToSet = { name: string; value: string; options?: Record<string, unknown> }
 
-const ROLE_HOME: Record<string, string> = {
+const RUTAS_PUBLICAS = ['/login', '/join']
+
+const INICIO_POR_ROL: Record<string, string> = {
   director:    '/director',
-  coordinator: '/coordinator',
-  secretary:   '/secretary',
-  teacher:     '/teacher',
+  coordinator: '/students',
+  secretary:   '/students',
+  teacher:     '/courses',
   student:     '/exam',
-}
-
-const ROLE_ALLOWED: Record<string, string[]> = {
-  '/director':    ['director'],
-  '/coordinator': ['director', 'coordinator'],
-  '/secretary':   ['director', 'coordinator', 'secretary'],
-  '/teacher':     ['director', 'coordinator', 'teacher'],
-  '/exam':        ['director', 'coordinator', 'secretary', 'teacher', 'student'],
-  '/results':     ['director', 'coordinator', 'secretary', 'teacher', 'student'],
-}
-
-async function getUserRole(supabase: any, userId: string): Promise<string> {
-  // Obtener role_id del perfil y luego buscar el nombre del rol
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('role_id')
-    .eq('id', userId)
-    .single()
-
-  if (!profile?.role_id) return 'student'
-
-  const { data: role } = await supabase
-    .from('roles')
-    .select('name')
-    .eq('id', profile.role_id)
-    .single()
-
-  return role?.name ?? 'student'
 }
 
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({ request })
 
-  try {
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          getAll() { return request.cookies.getAll() },
-          setAll(cs: { name: string; value: string; options?: CookieOptions }[]) {
-            cs.forEach(({ name, value }) => request.cookies.set(name, value))
-            response = NextResponse.next({ request })
-            cs.forEach(({ name, value, options }) =>
-              response.cookies.set(name, value, options as CookieOptions)
-            )
-          },
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() { return request.cookies.getAll() },
+        setAll(cookiesToSet: CookieToSet[]) {
+          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
+          response = NextResponse.next({ request })
+          cookiesToSet.forEach(({ name, value, options }) =>
+            response.cookies.set(name, value, options as any)
+          )
         },
-      }
-    )
-
-    const { data: { user } } = await supabase.auth.getUser()
-    const { pathname } = request.nextUrl
-
-    // Rutas públicas
-    if (PUBLIC_ROUTES.some(r => pathname.startsWith(r))) {
-      if (user && pathname === '/login') {
-        const role = await getUserRole(supabase, user.id)
-        return NextResponse.redirect(new URL(ROLE_HOME[role] ?? '/exam', request.url))
-      }
-      return response
+      },
     }
+  )
 
-    // Sin sesión → login
-    if (!user) {
-      return NextResponse.redirect(new URL('/login', request.url))
-    }
+  const { data: { user } } = await supabase.auth.getUser()
+  const pathname = request.nextUrl.pathname
 
-    // Verificar acceso por segmento de ruta
-    const segment = '/' + pathname.split('/')[1]
-    const allowed = ROLE_ALLOWED[segment]
+  // Sin sesión → ir a login
+  if (!user && !RUTAS_PUBLICAS.includes(pathname)) {
+    return NextResponse.redirect(new URL('/login', request.url))
+  }
 
-    if (allowed) {
-      const role = await getUserRole(supabase, user.id)
-      if (!allowed.includes(role)) {
-        return NextResponse.redirect(new URL(ROLE_HOME[role] ?? '/exam', request.url))
-      }
-    }
-
-  } catch (e) {
-    // Fallar de forma segura: si algo sale mal verificando la sesión,
-    // redirigir al login en lugar de dejar pasar la request sin autenticar
-    console.error('Middleware error:', e)
-    const { pathname } = request.nextUrl
-    if (!PUBLIC_ROUTES.some(r => pathname.startsWith(r))) {
-      return NextResponse.redirect(new URL('/login', request.url))
-    }
+  // Con sesión en página de login → redirigir según rol
+  if (user && pathname === '/login') {
+    const { data } = await supabase
+      .from('user_roles')
+      .select('roles(name)')
+      .eq('profile_id', user.id)
+      .single()
+    const rol = (data?.roles as any)?.name ?? 'student'
+    return NextResponse.redirect(new URL(INICIO_POR_ROL[rol] ?? '/', request.url))
   }
 
   return response
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|ico)$).*)'],
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|api/auth).*)'],
 }

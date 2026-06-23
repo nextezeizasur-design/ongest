@@ -36,21 +36,18 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Este curso ya no está activo' }, { status: 400 })
     }
 
-    // 2. Verificar email duplicado
-    const { data: existing } = await supabaseAdmin
-      .from('profiles')
-      .select('id')
-      .eq('email', email.toLowerCase().trim())
-      .eq('organization_id', course.organization_id)
-      .single()
+    const cleanEmail = email.toLowerCase().trim()
 
-    if (existing) {
+    // 2. Verificar duplicado en Auth directamente
+    const { data: authList } = await supabaseAdmin.auth.admin.listUsers()
+    const existsInAuth = authList?.users?.some(u => u.email === cleanEmail)
+    if (existsInAuth) {
       return NextResponse.json({ error: 'Ya existe una cuenta con ese email' }, { status: 409 })
     }
 
     // 3. Crear usuario en Auth
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
-      email: email.toLowerCase().trim(),
+      email: cleanEmail,
       password,
       email_confirm: true,
       user_metadata: {
@@ -60,9 +57,6 @@ export async function POST(request: Request) {
     })
 
     if (authError || !authData.user) {
-      if (authError?.message?.includes('already been registered')) {
-        return NextResponse.json({ error: 'Ya existe una cuenta con ese email' }, { status: 409 })
-      }
       return NextResponse.json({ error: 'Error al crear la cuenta' }, { status: 500 })
     }
 
@@ -71,7 +65,7 @@ export async function POST(request: Request) {
     // 4. Insertar profile + enrollment via función SECURITY DEFINER
     const { error: fnError } = await supabaseAdmin.rpc('fn_register_student', {
       p_user_id: userId,
-      p_email: email.toLowerCase().trim(),
+      p_email: cleanEmail,
       p_first_name: firstName.trim(),
       p_last_name: lastName.trim(),
       p_organization_id: course.organization_id,
@@ -79,7 +73,6 @@ export async function POST(request: Request) {
     })
 
     if (fnError) {
-      // Rollback: eliminar usuario de Auth
       await supabaseAdmin.auth.admin.deleteUser(userId)
       console.error('[fn_register_student] Error:', fnError)
       return NextResponse.json({ error: 'Error al registrar el alumno' }, { status: 500 })

@@ -21,7 +21,6 @@ export default function JoinPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
-  // Paso 1: validar código contra la DB directamente
   async function handleValidateCode() {
     if (!code.trim()) {
       setError('Ingresá el código de curso')
@@ -57,7 +56,6 @@ export default function JoinPage() {
     setStep('register')
   }
 
-  // Paso 2: crear cuenta
   async function handleRegister() {
     if (!firstName.trim() || !lastName.trim() || !email.trim() || !password) {
       setError('Completá todos los campos')
@@ -66,6 +64,7 @@ export default function JoinPage() {
     setLoading(true)
     setError('')
 
+    // 1. Crear cuenta via API route
     const res = await fetch('/api/join', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -79,22 +78,36 @@ export default function JoinPage() {
     })
 
     const data = await res.json()
-    setLoading(false)
 
     if (!res.ok) {
+      setLoading(false)
       setError(data.error ?? 'Error al crear la cuenta')
       return
     }
 
-    setStep('success')
-
-    // Iniciar sesión automáticamente y redirigir
+    // 2. Iniciar sesión usando el cliente de Supabase directamente
+    //    (NO via /login page — eso es una página Next.js, no una API)
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
     )
-    await supabase.auth.signInWithPassword({ email: email.trim(), password })
-    router.push('/exam')
+
+    const { error: signInError } = await supabase.auth.signInWithPassword({
+      email: email.trim(),
+      password,
+    })
+
+    setLoading(false)
+
+    if (signInError) {
+      // Cuenta creada pero no se pudo loguear automáticamente
+      // Mandamos al login con mensaje
+      router.push('/login?registered=1')
+      return
+    }
+
+    setStep('success')
+    setTimeout(() => router.push('/exam'), 1500)
   }
 
   return (

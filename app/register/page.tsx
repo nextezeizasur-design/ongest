@@ -8,17 +8,17 @@ type Step = 'form' | 'success'
 export default function RegisterPage() {
   const [step, setStep] = useState<Step>('form')
 
-  // Campos del formulario
   const [instituteName,      setInstituteName]      = useState('')
   const [directorFirstName,  setDirectorFirstName]  = useState('')
   const [directorLastName,   setDirectorLastName]   = useState('')
   const [directorEmail,      setDirectorEmail]      = useState('')
 
-  // Estado
-  const [loading,  setLoading]  = useState(false)
-  const [error,    setError]    = useState('')
-  const [loginUrl, setLoginUrl] = useState('')
-  const [slug,     setSlug]     = useState('')
+  const [loading,      setLoading]      = useState(false)
+  const [error,        setError]        = useState('')
+  const [loginUrl,     setLoginUrl]     = useState('')
+  const [slug,         setSlug]         = useState('')
+  const [tempPassword, setTempPassword] = useState('')
+  const [copied,       setCopied]       = useState(false)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -46,6 +46,7 @@ export default function RegisterPage() {
 
       setLoginUrl(data.login_url)
       setSlug(data.slug)
+      setTempPassword(data.temp_password)
       setStep('success')
 
     } catch {
@@ -53,6 +54,12 @@ export default function RegisterPage() {
     } finally {
       setLoading(false)
     }
+  }
+
+  function handleCopy() {
+    navigator.clipboard.writeText(tempPassword)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
   }
 
   return (
@@ -79,13 +86,12 @@ export default function RegisterPage() {
             <div className="mb-6">
               <h1 className="text-xl font-bold text-gray-900">Registrá tu instituto</h1>
               <p className="text-sm text-gray-500 mt-1">
-                Creá tu cuenta en minutos. Vas a recibir un email para activarla.
+                Creá tu cuenta en minutos.
               </p>
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-5">
 
-              {/* Instituto */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Nombre del instituto <span className="text-red-500">*</span>
@@ -100,7 +106,6 @@ export default function RegisterPage() {
                 />
               </div>
 
-              {/* Separador */}
               <div className="relative">
                 <div className="absolute inset-0 flex items-center">
                   <div className="w-full border-t border-gray-100" />
@@ -110,7 +115,6 @@ export default function RegisterPage() {
                 </div>
               </div>
 
-              {/* Nombre y apellido */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -140,7 +144,6 @@ export default function RegisterPage() {
                 </div>
               </div>
 
-              {/* Email */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Email del director <span className="text-red-500">*</span>
@@ -153,19 +156,14 @@ export default function RegisterPage() {
                   placeholder="director@miinstituto.com"
                   className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
                 />
-                <p className="text-xs text-gray-400 mt-1">
-                  Recibirás un email para activar tu cuenta y elegir tu contraseña.
-                </p>
               </div>
 
-              {/* Error */}
               {error && (
                 <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">
                   {error}
                 </div>
               )}
 
-              {/* Submit */}
               <button
                 type="submit"
                 disabled={loading}
@@ -190,7 +188,6 @@ export default function RegisterPage() {
         {step === 'success' && (
           <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-8 text-center">
 
-            {/* Check */}
             <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full"
               style={{ background: '#f0fdf4' }}>
               <svg className="h-8 w-8 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -200,28 +197,44 @@ export default function RegisterPage() {
 
             <h2 className="text-xl font-bold text-gray-900 mb-2">¡Instituto creado!</h2>
             <p className="text-sm text-gray-500 mb-6">
-              Revisá tu bandeja de entrada. Te enviamos un email con el link para activar tu cuenta y elegir tu contraseña.
+              Tu cuenta está lista. Guardá estos datos de acceso.
             </p>
 
-            {/* Info de acceso */}
-            <div className="bg-gray-50 rounded-xl p-4 text-left space-y-3 mb-6">
+            {/* Datos de acceso */}
+            <div className="bg-gray-50 rounded-xl p-4 text-left space-y-4 mb-4">
+
               <div>
                 <p className="text-xs text-gray-400 mb-0.5">Tu URL de acceso</p>
                 <p className="text-sm font-mono font-medium text-gray-900 break-all">
                   ongest.vercel.app{loginUrl}
                 </p>
               </div>
+
               <div>
-                <p className="text-xs text-gray-400 mb-0.5">Identificador del instituto</p>
-                <p className="text-sm font-mono font-medium" style={{ color: '#642f8d' }}>
-                  {slug}
-                </p>
+                <p className="text-xs text-gray-400 mb-0.5">Email</p>
+                <p className="text-sm font-medium text-gray-900">{directorEmail}</p>
+              </div>
+
+              <div>
+                <p className="text-xs text-gray-400 mb-1">Contraseña temporal</p>
+                <div className="flex items-center gap-2">
+                  <span className="font-mono font-bold text-lg tracking-widest" style={{ color: '#642f8d' }}>
+                    {tempPassword}
+                  </span>
+                  <button
+                    onClick={handleCopy}
+                    className="ml-auto text-xs px-2 py-1 rounded font-medium transition-colors"
+                    style={{ backgroundColor: copied ? '#16a34a' : '#642f8d', color: 'white' }}
+                  >
+                    {copied ? '✓ Copiada' : 'Copiar'}
+                  </button>
+                </div>
               </div>
             </div>
 
             <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-left mb-6">
               <p className="text-xs text-amber-700 leading-relaxed">
-                <strong>Importante:</strong> guardá tu URL de acceso. Cada instituto tiene su propia URL con el identificador único.
+                <strong>⚠ Importante:</strong> guardá estos datos ahora. La contraseña temporal solo se muestra una vez. Podés cambiarla desde tu perfil una vez que ingreses.
               </p>
             </div>
 
@@ -230,7 +243,7 @@ export default function RegisterPage() {
               className="block w-full py-2.5 text-sm font-medium text-white rounded-lg text-center transition-colors"
               style={{ backgroundColor: '#642f8d' }}
             >
-              Ir al login del instituto →
+              Ir al login →
             </a>
 
           </div>
@@ -238,7 +251,6 @@ export default function RegisterPage() {
 
       </div>
 
-      {/* Footer */}
       <p className="mt-8 text-xs text-gray-400">
         OnGest · Plataforma de evaluaciones para institutos de inglés
       </p>

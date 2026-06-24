@@ -31,6 +31,7 @@ interface CourseItem {
   teacher_id?:    string | null
   cefr_levels?:   CefrLevel | null
   profiles?:      { first_name: string; last_name: string } | null
+  join_code?:     string | null
 }
 
 interface Props {
@@ -48,6 +49,32 @@ const CEFR_LEVELS = [
   { id: 5, code: 'C1', label: 'Upper-Intermediate' },
   { id: 6, code: 'C2', label: 'Advanced'           },
 ]
+
+
+function JoinCodeBadge({ code }: { code?: string | null }) {
+  const [copied, setCopied] = useState(false)
+  if (!code) return null
+
+  function handleCopy() {
+    navigator.clipboard.writeText(code!)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  return (
+    <div className="flex items-center gap-2 mt-3 bg-purple-50 border border-purple-100 rounded-lg px-3 py-2">
+      <span className="text-xs text-purple-500 font-medium">Código de ingreso:</span>
+      <span className="font-mono font-bold text-purple-800 tracking-widest text-sm">{code}</span>
+      <button
+        onClick={handleCopy}
+        className="ml-auto text-xs px-2 py-0.5 rounded font-medium transition-colors"
+        style={{ backgroundColor: copied ? '#16a34a' : '#642f8d', color: 'white' }}
+      >
+        {copied ? '✓ Copiado' : 'Copiar'}
+      </button>
+    </div>
+  )
+}
 
 export default function SecretaryCoursesClient({
   courses: initialCourses,
@@ -177,6 +204,9 @@ export default function SecretaryCoursesClient({
                     </div>
                   )}
                 </div>
+
+                {/* Código de ingreso para alumnos */}
+                <JoinCodeBadge code={course.join_code} />
 
                 {/* Stats */}
                 <div className="flex items-center gap-4 pt-3 border-t border-gray-100">

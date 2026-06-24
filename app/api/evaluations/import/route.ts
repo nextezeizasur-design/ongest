@@ -107,8 +107,6 @@ ${text}
 Respondé ÚNICAMENTE con el array JSON. Sin texto previo ni posterior. Sin markdown.`
 }
 
-}
-
 // ─── Extraer texto del PDF (pdf-parse) ───────────────────────────────────────
 
 async function extractPdfText(file: File): Promise<string> {

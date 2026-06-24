@@ -626,11 +626,27 @@ export default function NewEvaluationPage() {
               <div className="border border-purple-200 rounded-2xl bg-purple-50/30 p-4">
                 <p className="text-xs text-purple-700 font-medium mb-3">
                   Seleccioná las preguntas del banco y hacé click en "Agregar" para incorporarlas.
-                  {!savedEvalId && (
-                    <span className="ml-1 text-amber-600">⚠️ Guardá la evaluación primero para poder agregar desde el banco.</span>
-                  )}
+
                 </p>
-                <QuestionBankPage evaluationId={savedEvalId ?? undefined} onAdded={() => setShowBank(false)} />
+                <QuestionBankPage
+                  evaluationId={savedEvalId ?? undefined}
+                  onAdded={() => setShowBank(false)}
+                  onAddFromBank={savedEvalId ? undefined : (bankQs) => {
+                    const genId = () => Math.random().toString(36).slice(2, 10)
+                    const drafted = bankQs.map((bq: any) => ({
+                      id:      genId(),
+                      q_type:  bq.q_type as any,
+                      body:    bq.body,
+                      points:  1,
+                      options: (bq.options ?? []).map((o: any) => ({
+                        id:         genId(),
+                        body:       o.body,
+                        is_correct: o.is_correct,
+                      })),
+                    }))
+                    setQuestions(prev => [...prev, ...drafted])
+                  }}
+                />
               </div>
             )}
 

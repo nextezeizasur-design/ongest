@@ -28,7 +28,7 @@ function JoinCodeBadge({ code }: { code?: string }) {
   if (!code) return null
 
   function handleCopy() {
-    navigator.clipboard.writeText(code)
+    navigator.clipboard.writeText(code!)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }

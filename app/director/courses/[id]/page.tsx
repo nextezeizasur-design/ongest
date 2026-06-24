@@ -24,7 +24,7 @@ export default async function DirectorCourseDetail({
   // Query completamente plano — sin joins, sin FK hints
   const { data: course } = await sb
     .from('courses')
-    .select('id, name, description, is_active, schedule_days, schedule_time, bibliography, notes, cefr_level_id, teacher_id, organization_id')
+    .select('id, name, description, is_active, schedule_days, schedule_time, bibliography, notes, cefr_level_id, teacher_id, organization_id, join_code')
     .eq('id', id)
     .single()
 
@@ -110,6 +110,16 @@ export default async function DirectorCourseDetail({
                   <p className="font-medium text-gray-900 mt-0.5">{course.schedule_time}</p>
                 </div>
               )}
+            </div>
+          )}
+
+          {course.join_code && (
+            <div className="mt-4 pt-4 border-t border-gray-100">
+              <p className="text-xs text-gray-400 mb-1.5">🔑 Código de ingreso para alumnos</p>
+              <div className="flex items-center gap-3 bg-purple-50 border border-purple-100 rounded-lg px-4 py-3">
+                <span className="font-mono font-bold text-purple-800 tracking-widest text-lg">{course.join_code}</span>
+                <p className="text-xs text-purple-500 ml-auto">Compartí este código con tus alumnos para que puedan registrarse en <strong>ongest.vercel.app/join</strong></p>
+              </div>
             </div>
           )}
 

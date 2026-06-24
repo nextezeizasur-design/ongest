@@ -20,7 +20,7 @@ export default async function SecretaryCourses() {
       .select(`
         id, name, description, is_active,
         schedule_days, schedule_time, bibliography, notes,
-        cefr_level_id, teacher_id,
+        cefr_level_id, teacher_id, join_code,
         cefr_levels(id, code, label)
       `)
       .eq('organization_id', orgId)

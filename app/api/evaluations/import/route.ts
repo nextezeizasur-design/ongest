@@ -93,9 +93,12 @@ READING COMPREHENSION (completar oraciones sobre un texto):
 - instruction: debe incluir el título del texto y la consigna original
 
 IMPORTANTE — TEXTO DE READING:
-Si hay un texto de lectura largo seguido de ítems, incluí en el campo "instruction" de CADA ítem:
-1. La consigna original (ej: "Read the text about Linda and her family. Complete the sentences (1–5).")
-2. El texto completo entre comillas para que el alumno pueda leerlo.
+Si hay un texto de lectura largo seguido de ítems para completar:
+- El campo "instruction" de CADA ítem debe contener: la consigna original + el texto completo de la lectura.
+- El campo "body" de CADA ítem debe contener: solo la oración incompleta que el alumno debe completar.
+- Ejemplo de body: "Linda and her dad don't have the same colour ___."
+- Ejemplo de instruction: "Read the text about Linda and her family. Complete the sentences. TEXT: My name's Linda and I have three sisters..."
+- Es CRÍTICO que el texto de la lectura quede en la instruction para que el alumno pueda leerlo al rendir el examen.
 
 Nivel CEFR: ${cefrLevel || 'A2'}
 difficulty_label: ${cefrLevel && ['A1','A2'].includes(cefrLevel) ? 'easy' : cefrLevel && ['B1','B2'].includes(cefrLevel) ? 'medium' : 'medium'}

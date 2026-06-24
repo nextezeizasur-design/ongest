@@ -233,6 +233,18 @@ export default function LoginPage() {
           </div>
         )}
 
+        {/* Link alumno nuevo */}
+        {view === 'login' && (
+          <div className="mt-4 text-center">
+            <p className="text-sm text-gray-500">
+              ¿Sos alumno nuevo?{' '}
+              <a href="/join" className="font-medium hover:underline" style={{ color: brandColor }}>
+                Registrate con tu código de curso
+              </a>
+            </p>
+          </div>
+        )}
+
         {/* Footer */}
         <div className="mt-6 text-center space-y-3">
           <p className="text-xs text-gray-400">

@@ -29,65 +29,84 @@ interface ParsedQuestion {
 // ─── Prompt para Claude ───────────────────────────────────────────────────────
 
 function buildPrompt(text: string, cefrLevel: string | null): string {
-  return `Sos un asistente especializado en analizar exámenes de inglés (EFL/ESL).
-Analizá el siguiente texto extraído de un PDF de examen y extraé TODOS los ejercicios como preguntas individuales.
+  return `Sos un experto en análisis de exámenes de inglés EFL/ESL. Analizá el texto completo del examen y extraé TODOS los ejercicios.
 
-REGLAS ESTRICTAS:
-- Ignorá: encabezados de página, nombre del alumno, fecha, puntaje total, instrucciones de ejemplo (ítem 0), logos, pie de página, copyright.
-- Incluí SOLO los ítems numerados del 1 en adelante (no el ejemplo "0").
-- Para cada ítem generá un objeto JSON con esta estructura exacta.
-- Respondé SOLO con un array JSON válido, sin texto adicional, sin markdown, sin bloques de código.
-- CRÍTICO: todos los strings del JSON deben escapar correctamente los apóstrofes y comillas. Usá solo comillas dobles para los valores. No uses comillas simples dentro de strings JSON.
-- CRÍTICO: no incluyas saltos de línea dentro de los valores de los campos "body" e "instruction". Todo el texto de cada campo debe ir en una sola línea.
+REGLAS GENERALES:
+- Ignorá: nombre del alumno, fecha, puntaje, logos, copyright, pie de página, el ítem de ejemplo (ítem 0).
+- Procesá TODAS las secciones: LISTENING, GRAMMAR, VOCABULARY, READING, WRITING, SPEAKING.
+- Incluí TODOS los ítems numerados del 1 en adelante, de TODAS las secciones.
+- Respondé ÚNICAMENTE con un array JSON válido. Sin texto, sin markdown, sin bloques de código.
+- CRÍTICO: usa solo comillas dobles en el JSON. No uses saltos de línea dentro de los valores de los campos.
 
-ESTRUCTURA DE CADA PREGUNTA:
+CÓMO IDENTIFICAR LA CONSIGNA DE CADA EJERCICIO:
+- La consigna es el texto que empieza con el número del ejercicio (ej: "1 Listen to...", "2 Match the...", "3 Select the...")
+- Cada consigna aplica a TODOS los ítems numerados que la siguen hasta que aparece otra consigna con número mayor.
+- Si los ítems 7-10 no tienen consigna propia, pertenecen al ejercicio cuya consigna es la más reciente antes de ellos.
+- Para ejercicios con "Complete the sentences with [lista de palabras]": incluí la lista de palabras en la consigna.
+
+ESTRUCTURA DE CADA PREGUNTA (todos los campos son obligatorios):
 {
-  "body": "enunciado completo del ítem",
+  "body": "enunciado completo del ítem numerado (sin el número)",
   "q_type": "multiple_choice" | "true_false" | "short_answer" | "essay",
   "skill": "grammar" | "vocabulary" | "reading" | "writing" | "listening",
-  "options": [{"body": "texto opción", "is_correct": true/false}],
-  "instruction": "instrucción del ejercicio (ej: 'Select the correct word')",
+  "options": [{"body": "texto", "is_correct": false}],
+  "instruction": "consigna completa del ejercicio al que pertenece este ítem",
   "points": 1,
-  "needs_review": true/false
+  "needs_review": true
 }
 
 REGLAS POR TIPO DE EJERCICIO:
 
-TRUE/FALSE: q_type="true_false", options=[{"body":"True","is_correct":DESCONOCIDO},{"body":"False","is_correct":false}], needs_review=true (el docente marca cuál es correcta).
+TRUE/FALSE (ej: "It's hot where Dimitra is staying now."):
+- q_type: "true_false"
+- options: [{"body":"True","is_correct":false},{"body":"False","is_correct":false}]
+- needs_review: true
+- skill: según la sección (LISTENING → "listening", etc.)
 
-SELECT CORRECT WORD (ej: "This/These is a picture"):
-- q_type="multiple_choice"
-- options: una opción por cada palabra separada por "/", is_correct=false en todas (docente marca)
-- needs_review=true
+SELECT CORRECT WORD (ej: "This/These is a picture of my family."):
+- q_type: "multiple_choice"
+- options: una por cada palabra separada por "/", todas con is_correct:false
+- needs_review: true
 
-MATCH SENTENCE HALVES:
-- q_type="multiple_choice"  
-- options: cada mitad de la columna derecha como opción, is_correct=false en todas
-- needs_review=true
+MATCH SENTENCE HALVES (columna izquierda con columna derecha):
+- body: solo la parte izquierda del ítem
+- q_type: "multiple_choice"
+- options: cada opción de la columna derecha (letras a,b,c...), todas con is_correct:false
+- needs_review: true
 
 COMPLETE WITH WORD FROM LIST (fill in the blank):
-- q_type="short_answer"
-- options: [] vacío
-- needs_review=true (docente agrega respuesta correcta)
-
-REWRITE / NEGATIVE / TRANSFORM:
-- q_type="essay"
+- q_type: "short_answer"
 - options: []
-- needs_review=true
+- needs_review: true
+- instruction: debe incluir la lista de palabras disponibles
 
-READING COMPREHENSION (complete sentence):
-- q_type="short_answer"
+REWRITE / TRANSFORM:
+- q_type: "essay"
 - options: []
-- needs_review=true
+- needs_review: true
 
-Nivel CEFR del examen: ${cefrLevel || 'desconocido'}
+READING COMPREHENSION (completar oraciones sobre un texto):
+- body: la oración incompleta
+- q_type: "short_answer"
+- options: []
+- needs_review: true
+- instruction: debe incluir el título del texto y la consigna original
+
+IMPORTANTE — TEXTO DE READING:
+Si hay un texto de lectura largo seguido de ítems, incluí en el campo "instruction" de CADA ítem:
+1. La consigna original (ej: "Read the text about Linda and her family. Complete the sentences (1–5).")
+2. El texto completo entre comillas para que el alumno pueda leerlo.
+
+Nivel CEFR: ${cefrLevel || 'A2'}
 difficulty_label: ${cefrLevel && ['A1','A2'].includes(cefrLevel) ? 'easy' : cefrLevel && ['B1','B2'].includes(cefrLevel) ? 'medium' : 'medium'}
-difficulty_score: ${cefrLevel === 'A1' ? 20 : cefrLevel === 'A2' ? 35 : cefrLevel === 'B1' ? 50 : cefrLevel === 'B2' ? 65 : cefrLevel === 'C1' ? 80 : 50}
+difficulty_score: ${cefrLevel === 'A1' ? 20 : cefrLevel === 'A2' ? 35 : cefrLevel === 'B1' ? 50 : cefrLevel === 'B2' ? 65 : cefrLevel === 'C1' ? 80 : 35}
 
-TEXTO DEL EXAMEN:
+TEXTO COMPLETO DEL EXAMEN:
 ${text}
 
-Respondé ÚNICAMENTE con el array JSON. Sin texto previo ni posterior.`
+Respondé ÚNICAMENTE con el array JSON. Sin texto previo ni posterior. Sin markdown.`
+}
+
 }
 
 // ─── Extraer texto del PDF (pdf-parse) ───────────────────────────────────────
@@ -114,7 +133,7 @@ async function parseWithClaude(text: string, cefrLevel: string | null): Promise<
     },
     body: JSON.stringify({
       model:      'claude-sonnet-4-6',
-      max_tokens: 4096,
+      max_tokens: 8192,
       messages: [
         {
           role:    'user',

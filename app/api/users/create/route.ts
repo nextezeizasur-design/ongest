@@ -1,3 +1,5 @@
+// RUTA: app/api/users/create/route.ts
+
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { cookies } from 'next/headers'
@@ -10,7 +12,17 @@ const ROLE_IDS: Record<string, number> = {
   student:     4,
   teacher:     5,
 }
-const RATE_LIMIT = { windowMs: 60_000, max: 10 } // 10 por minuto — crear usuarios es una acción poco frecuente
+
+const RATE_LIMIT = { windowMs: 60_000, max: 10 }
+
+function generateTempPassword(): string {
+  const chars = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789'
+  let pass = ''
+  for (let i = 0; i < 10; i++) {
+    pass += chars.charAt(Math.floor(Math.random() * chars.length))
+  }
+  return pass
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -21,6 +33,7 @@ export async function POST(request: NextRequest) {
         { status: 429 }
       )
     }
+
     const { first_name, last_name, email, role } = await request.json()
 
     if (!first_name || !last_name || !email || !role) {
@@ -34,7 +47,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Rol inválido.' }, { status: 400 })
     }
 
-    // Verificar que quien llama es director
+    // Verificar que quien llama es director o secretary o coordinator
     const cookieStore = await cookies()
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -62,12 +75,10 @@ export async function POST(request: NextRequest) {
       .eq('id', user.id)
       .single()
 
-    if (!profile || profile.role_id !== 1) {
-      return NextResponse.json({ error: 'Solo el director puede crear usuarios.' }, { status: 403 })
+    if (!profile || ![1, 2, 3].includes(profile.role_id)) {
+      return NextResponse.json({ error: 'No tenés permisos para crear usuarios.' }, { status: 403 })
     }
 
-    // organization_id siempre viene del perfil del caller autenticado
-    // Ignorar cualquier valor enviado en el body para prevenir tenant injection
     const organization_id = profile.organization_id
 
     // Usar Service Role para crear el usuario en Auth
@@ -82,18 +93,19 @@ export async function POST(request: NextRequest) {
       }
     )
 
-    // ✅ Opción A: invite por email — el usuario elige su propia contraseña
-    // No se genera ni guarda ninguna contraseña temporal
-    const { data: inviteData, error: createError } = await (adminSupabase as any).auth.admin.generateLink({
-      type:  'invite',
-      email: email.trim().toLowerCase(),
-      options: {
-        data: {
-          first_name:      first_name.trim(),
-          last_name:       last_name.trim(),
-          role_id:         ROLE_IDS[role],
-          organization_id: organization_id,
-        },
+    // Generar contraseña temporal
+    const tempPassword = generateTempPassword()
+
+    // Crear usuario con contraseña temporal
+    const { data: newUserData, error: createError } = await (adminSupabase as any).auth.admin.createUser({
+      email:         email.trim().toLowerCase(),
+      password:      tempPassword,
+      email_confirm: true,
+      user_metadata: {
+        first_name:      first_name.trim(),
+        last_name:       last_name.trim(),
+        role_id:         ROLE_IDS[role],
+        organization_id: organization_id,
       },
     })
 
@@ -107,7 +119,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: createError.message }, { status: 400 })
     }
 
-    const newUser = inviteData?.user ?? inviteData
+    const newUser = newUserData?.user
 
     // Actualizar el perfil creado por el trigger
     await (adminSupabase as any)
@@ -120,9 +132,12 @@ export async function POST(request: NextRequest) {
         role_id:         ROLE_IDS[role],
         is_active:       true,
       })
-      .eq('id', newUser.user.id)
+      .eq('id', newUser.id)
 
-    return NextResponse.json({ success: true, invited: true })
+    return NextResponse.json({
+      success:       true,
+      temp_password: tempPassword,
+    })
 
   } catch (err: any) {
     return NextResponse.json(

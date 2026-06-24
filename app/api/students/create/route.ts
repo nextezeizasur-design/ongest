@@ -75,31 +75,42 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: authError.message }, { status: 400 })
     }
 
-    const newUser = inviteData?.user ?? inviteData
+    // generateLink devuelve { data: { user, properties, action_link }, error }
+    // pero cuando se usa .auth.admin.generateLink el resultado puede variar.
+    // Normalizamos para obtener siempre el user.id correctamente.
+    const newUserId: string | undefined =
+      inviteData?.user?.id ??
+      inviteData?.id ??
+      inviteData?.data?.user?.id
+
+    if (!newUserId) {
+      console.error('[/api/students/create] No se pudo obtener el user ID:', JSON.stringify(inviteData))
+      return NextResponse.json({ error: 'Error al obtener el ID del usuario creado.' }, { status: 500 })
+    }
 
     // Actualizar perfil con datos adicionales (el trigger ya lo creó)
     await (adminSupabase as any).from('profiles').update({
-      first_name:  first_name.trim(),
-      last_name:   last_name.trim(),
-      email:       email.trim().toLowerCase(),
-      phone:       phone?.trim() || null,
-      birth_date:  birth_date || null,
+      first_name:      first_name.trim(),
+      last_name:       last_name.trim(),
+      email:           email.trim().toLowerCase(),
+      phone:           phone?.trim() || null,
+      birth_date:      birth_date || null,
       organization_id,
-      role_id:     4,
-      is_active:   true,
-    }).eq('id', newUser.user.id)
+      role_id:         4,
+      is_active:       true,
+    }).eq('id', newUserId)
 
     // Inscribir en curso si se especificó
     if (course_id) {
       await (adminSupabase as any).from('enrollments').insert({
-        student_id: newUser.user.id,
+        student_id: newUserId,
         course_id,
       })
     }
 
     return NextResponse.json({
       success: true,
-      user_id: newUser?.id ?? newUser?.user?.id,
+      user_id: newUserId,
       invited: true,
       message: `Alumno creado. Se envió un email de bienvenida a ${email}.`,
     })

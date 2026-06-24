@@ -52,9 +52,11 @@ export default function UsersClient({ orgId }: UsersClientProps) {
   })
 
   // Modal confirmación post-creación
-  const [showSuccess, setShowSuccess] = useState(false)
-  const [lastEmail, setLastEmail]     = useState('')
-  const [lastRole, setLastRole]       = useState('')
+  const [showSuccess, setShowSuccess]     = useState(false)
+  const [lastEmail, setLastEmail]         = useState('')
+  const [lastRole, setLastRole]           = useState('')
+  const [lastTempPass, setLastTempPass]   = useState('')
+  const [copiedPass, setCopiedPass]       = useState(false)
 
   useEffect(() => { fetchUsers() }, [])
 
@@ -99,6 +101,8 @@ export default function UsersClient({ orgId }: UsersClientProps) {
 
       setLastEmail(form.email)
       setLastRole(ROLE_LABELS[{ director: 1, coordinator: 2, secretary: 3, student: 4, teacher: 5 }[form.role] ?? 5] ?? form.role)
+      setLastTempPass(json.temp_password ?? '')
+      setCopiedPass(false)
       setShowCreate(false)
       setShowSuccess(true)
       setForm({ first_name: '', last_name: '', email: '', role: 'teacher' })
@@ -326,7 +330,6 @@ export default function UsersClient({ orgId }: UsersClientProps) {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm">
             <div className="p-6 text-center">
-              {/* Check icon */}
               <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-green-100">
                 <svg className="h-7 w-7 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <polyline points="20 6 9 17 4 12" />
@@ -336,25 +339,46 @@ export default function UsersClient({ orgId }: UsersClientProps) {
               <h2 className="text-lg font-semibold text-gray-900 mb-1">
                 ¡Usuario creado!
               </h2>
-              <p className="text-sm text-gray-500 mb-5">
-                Se envió un email de bienvenida a<br />
+              <p className="text-sm text-gray-500 mb-4">
+                Compartí estos datos de acceso con<br />
                 <span className="font-medium text-gray-800">{lastEmail}</span>
               </p>
 
-              <div className="bg-gray-50 rounded-xl p-4 text-left mb-5 space-y-2">
+              <div className="bg-gray-50 rounded-xl p-4 text-left mb-4 space-y-3">
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-500">Rol asignado</span>
                   <span className="font-medium text-gray-900">{lastRole}</span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">Acceso</span>
-                  <span className="text-green-700 font-medium">✓ Link de invitación enviado</span>
+                  <span className="text-gray-500">Email</span>
+                  <span className="font-medium text-gray-900 text-xs break-all">{lastEmail}</span>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500 mb-1">Contraseña temporal</p>
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono font-bold text-lg tracking-widest" style={{ color: '#642f8d' }}>
+                      {lastTempPass}
+                    </span>
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(lastTempPass)
+                        setCopiedPass(true)
+                        setTimeout(() => setCopiedPass(false), 2000)
+                      }}
+                      className="ml-auto text-xs px-2 py-1 rounded font-medium transition-colors flex-shrink-0"
+                      style={{ backgroundColor: copiedPass ? '#16a34a' : '#642f8d', color: 'white' }}
+                    >
+                      {copiedPass ? '✓' : 'Copiar'}
+                    </button>
+                  </div>
                 </div>
               </div>
 
-              <p className="text-xs text-gray-400 mb-5">
-                El usuario deberá activar su cuenta desde el email recibido.
-              </p>
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-left mb-4">
+                <p className="text-xs text-amber-700">
+                  <strong>⚠ Guardá esta contraseña.</strong> Solo se muestra una vez. El usuario puede cambiarla desde su perfil.
+                </p>
+              </div>
 
               <button
                 onClick={() => setShowSuccess(false)}

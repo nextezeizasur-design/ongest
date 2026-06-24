@@ -96,7 +96,7 @@ export default function QuestionBankPage({ evaluationId, onAdded, onAddFromBank 
     if (difficulty) params.set('difficulty', difficulty)
     if (cefr)       params.set('cefr', cefr)
     if (search)     params.set('q', search)
-    params.set('limit', '40')
+    params.set('limit', '500')
 
     const res  = await fetch(`/api/question-bank?${params}`)
     const json = await res.json()

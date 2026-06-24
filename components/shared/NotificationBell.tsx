@@ -27,6 +27,7 @@ const TYPE_ICON: Record<string, string> = {
   class_scheduled:  '🎥',
   class_recording:  '📹',
   general:          '🔔',
+  new_student:      '👤',
 }
 
 function timeAgo(iso: string): string {

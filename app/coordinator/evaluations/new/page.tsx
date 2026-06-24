@@ -598,6 +598,11 @@ export default function NewEvaluationPage() {
                 className={`btn-outline flex items-center gap-1.5 ${showBank ? 'ring-2 ring-purple-300' : ''}`}>
                 📚 {showBank ? 'Cerrar banco' : 'Agregar desde banco'}
               </button>
+
+              <button onClick={() => { setShowImport(p => !p); setShowBank(false); setShowExercise(false) }}
+                className={`btn-outline flex items-center gap-1.5 ${showImport ? 'ring-2 ring-purple-300' : ''}`}>
+                📄 {showImport ? 'Cerrar importador' : 'Importar desde PDF'}
+              </button>
             </div>
 
             {/* ── Panel editor de ejercicios ── */}

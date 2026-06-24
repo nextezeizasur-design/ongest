@@ -37,6 +37,8 @@ REGLAS ESTRICTAS:
 - Incluí SOLO los ítems numerados del 1 en adelante (no el ejemplo "0").
 - Para cada ítem generá un objeto JSON con esta estructura exacta.
 - Respondé SOLO con un array JSON válido, sin texto adicional, sin markdown, sin bloques de código.
+- CRÍTICO: todos los strings del JSON deben escapar correctamente los apóstrofes y comillas. Usá solo comillas dobles para los valores. No uses comillas simples dentro de strings JSON.
+- CRÍTICO: no incluyas saltos de línea dentro de los valores de los campos "body" e "instruction". Todo el texto de cada campo debe ir en una sola línea.
 
 ESTRUCTURA DE CADA PREGUNTA:
 {
@@ -137,13 +139,44 @@ async function parseWithClaude(text: string, cefrLevel: string | null): Promise<
     .trim()
 
   let parsed: any[]
-  try {
-    parsed = JSON.parse(clean)
-  } catch {
-    // Intentar extraer el array si hay texto antes/después
+
+  function tryParse(str: string): any[] | null {
+    try { return JSON.parse(str) } catch { return null }
+  }
+
+  function sanitizeJson(str: string): string {
+    // Reemplaza saltos de línea/tabs dentro de strings JSON que rompen el parser
+    return str.replace(/("(?:[^"\\]|\\.)*")/g, (m) =>
+      m.replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t')
+    )
+  }
+
+  const direct = tryParse(clean)
+  if (direct && Array.isArray(direct)) {
+    parsed = direct
+  } else {
     const match = clean.match(/\[[\s\S]*\]/)
-    if (!match) throw new Error('Claude no devolvió JSON válido.')
-    parsed = JSON.parse(match[0])
+    if (!match) throw new Error('Claude no devolvió JSON válido. Intentá de nuevo.')
+
+    const sanitized = sanitizeJson(match[0])
+    const fromSanitized = tryParse(sanitized)
+
+    if (fromSanitized && Array.isArray(fromSanitized)) {
+      parsed = fromSanitized
+    } else {
+      // Último recurso: extraer objetos individuales
+      const objMatches = match[0].match(/\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}/g)
+      if (!objMatches || objMatches.length === 0) {
+        throw new Error('No se pudo parsear la respuesta. Intentá de nuevo.')
+      }
+      parsed = objMatches.flatMap((obj: string) => {
+        const r = tryParse(obj) ?? tryParse(sanitizeJson(obj))
+        return r ? [r] : []
+      })
+      if (parsed.length === 0) {
+        throw new Error('No se pudieron extraer preguntas del PDF.')
+      }
+    }
   }
 
   if (!Array.isArray(parsed)) throw new Error('La respuesta de Claude no es un array.')

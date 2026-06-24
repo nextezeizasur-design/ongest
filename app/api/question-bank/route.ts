@@ -55,7 +55,7 @@ export async function GET(request: NextRequest) {
   const difficulty = sp.get('difficulty')
   const topic      = sp.get('topic')
   const q          = sp.get('q')
-  const limit      = parseInt(sp.get('limit') ?? '20')
+  const limit      = parseInt(sp.get('limit') ?? '200')
 
   const { data, error } = await (supabase as any).rpc('suggest_bank_questions', {
     p_organization_id: profile.organization_id,
@@ -63,7 +63,7 @@ export async function GET(request: NextRequest) {
     p_cefr_level:      cefr        || null,
     p_difficulty:      difficulty  || null,
     p_topic:           topic       || null,
-    p_limit:           Math.min(limit, 50),
+    p_limit:           Math.min(limit, 500),
   })
 
   // Filtro de texto libre si hay query

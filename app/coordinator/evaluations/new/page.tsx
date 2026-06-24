@@ -206,13 +206,19 @@ export default function NewEvaluationPage() {
   function handleAddImported() {
     if (!importedQs) return
     const toAdd = importedQs.filter(q => q._checked)
-    const drafted: QuestionDraft[] = toAdd.map(q => ({
-      id:      genId(),
-      q_type:  q.q_type as QuestionType,
-      body:    q.body,
-      points:  q.points,
-      options: q.options.map(o => ({ id: genId(), body: o.body, is_correct: o.is_correct })),
-    }))
+    const drafted: QuestionDraft[] = toAdd.map(q => {
+      // Incluir la consigna al inicio del body para que quede visible en el examen
+      const fullBody = q.instruction
+        ? `📌 ${q.instruction}\n\n${q.body}`
+        : q.body
+      return {
+        id:      genId(),
+        q_type:  q.q_type as QuestionType,
+        body:    fullBody,
+        points:  q.points,
+        options: q.options.map(o => ({ id: genId(), body: o.body, is_correct: o.is_correct })),
+      }
+    })
     setQuestions(prev => [...prev, ...drafted])
     // Reset importador
     setImportedQs(null)
@@ -829,11 +835,16 @@ export default function NewEvaluationPage() {
                                 </div>
                               )}
 
-                              {/* Instrucción original */}
+                              {/* Consigna del ejercicio */}
                               {q.instruction && (
-                                <p className="text-[10px] text-purple-500 mt-1 italic">
-                                  {q.section && `[${q.section}] `}{q.instruction.slice(0, 80)}{q.instruction.length > 80 ? '…' : ''}
-                                </p>
+                                <div className="mt-2 rounded-lg border border-purple-200 bg-purple-50 px-3 py-2">
+                                  <p className="text-[10px] font-semibold uppercase tracking-wide text-purple-500 mb-1">
+                                    📌 Consigna
+                                  </p>
+                                  <p className="text-[11px] leading-relaxed text-purple-900 whitespace-pre-line">
+                                    {q.instruction}
+                                  </p>
+                                </div>
                               )}
                             </div>
                           </div>

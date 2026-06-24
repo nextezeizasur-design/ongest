@@ -76,6 +76,25 @@ export async function GET(request: NextRequest) {
     )
   }
 
+  // Enriquecer con opciones del banco
+  if (results.length > 0) {
+    const ids = results.map((r: any) => r.id)
+    const { data: opts } = await (supabase as any)
+      .from('question_bank_options')
+      .select('question_id, body, is_correct, sort_order')
+      .in('question_id', ids)
+      .order('sort_order')
+
+    if (opts && opts.length > 0) {
+      const optsByQ: Record<string, any[]> = {}
+      for (const o of opts) {
+        if (!optsByQ[o.question_id]) optsByQ[o.question_id] = []
+        optsByQ[o.question_id].push(o)
+      }
+      results = results.map((r: any) => ({ ...r, options: optsByQ[r.id] ?? [] }))
+    }
+  }
+
   return NextResponse.json({ questions: results })
 }
 

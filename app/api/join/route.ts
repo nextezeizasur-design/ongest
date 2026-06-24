@@ -21,10 +21,10 @@ export async function POST(request: Request) {
       { auth: { autoRefreshToken: false, persistSession: false } }
     )
 
-    // 1. Validar código y obtener curso + org
+    // 1. Validar código y obtener curso + org + docente
     const { data: course, error: courseError } = await supabaseAdmin
       .from('courses')
-      .select('id, name, organization_id, is_active')
+      .select('id, name, organization_id, is_active, teacher_id')
       .eq('join_code', code.toUpperCase().trim())
       .single()
 
@@ -81,6 +81,61 @@ export async function POST(request: Request) {
         detail: fnError.message,
         code: fnError.code
       }, { status: 500 })
+    }
+
+    // 5. Notificaciones automáticas — no bloquean el registro si fallan
+    try {
+      const studentFullName = `${firstName.trim()} ${lastName.trim()}`
+      const notifTitle = '👤 Nuevo alumno registrado'
+      const notifBody  = `${studentFullName} se unió al curso "${course.name}".`
+      const notifLink  = `/students`
+
+      // Destinatarios: docente del curso + todas las secretarias de la org
+      const recipientIds: string[] = []
+
+      // Docente del curso (si tiene uno asignado)
+      if (course.teacher_id) {
+        recipientIds.push(course.teacher_id)
+      }
+
+      // Secretarias de la misma organización (role_id = 3)
+      const { data: secretaries } = await supabaseAdmin
+        .from('profiles')
+        .select('id')
+        .eq('organization_id', course.organization_id)
+        .eq('role_id', 3)
+
+      if (secretaries && secretaries.length > 0) {
+        for (const s of secretaries) {
+          // Evitar duplicado si el docente también es secretaria (raro pero posible)
+          if (!recipientIds.includes(s.id)) {
+            recipientIds.push(s.id)
+          }
+        }
+      }
+
+      // Insertar una notificación por destinatario
+      if (recipientIds.length > 0) {
+        const notifications = recipientIds.map(uid => ({
+          user_id:    uid,
+          title:      notifTitle,
+          body:       notifBody,
+          type:       'new_student',
+          link:       notifLink,
+          is_read:    false,
+        }))
+
+        const { error: notifError } = await supabaseAdmin
+          .from('notifications')
+          .insert(notifications)
+
+        if (notifError) {
+          // Solo log — el registro del alumno ya fue exitoso
+          console.error('[/api/join] Error insertando notificaciones:', notifError)
+        }
+      }
+    } catch (notifErr) {
+      console.error('[/api/join] Notificaciones fallaron (no crítico):', notifErr)
     }
 
     return NextResponse.json({

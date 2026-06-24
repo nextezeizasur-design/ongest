@@ -21,6 +21,15 @@ function slugify(text: string): string {
     .slice(0, 50)
 }
 
+function generateTempPassword(): string {
+  const chars = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789'
+  let pass = ''
+  for (let i = 0; i < 10; i++) {
+    pass += chars.charAt(Math.floor(Math.random() * chars.length))
+  }
+  return pass
+}
+
 export async function POST(req: NextRequest) {
   // Rate limiting
   const rl = rateLimit(`register:${getClientIp(req)}`, RATE_LIMIT)
@@ -96,58 +105,56 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Crear el usuario director vía invitación por email
-    // Supabase envía el email de bienvenida automáticamente (requiere SMTP configurado)
-    const { data: inviteData, error: inviteError } = await admin.auth.admin.generateLink({
-      type:  'invite',
-      email: director_email.trim().toLowerCase(),
-      options: {
-        data: {
-          first_name:      director_first_name.trim(),
-          last_name:       director_last_name.trim(),
-          role_id:         1,               // director
-          organization_id: org.id,
-        },
+    // Generar contraseña temporal
+    const tempPassword = generateTempPassword()
+
+    // Crear el usuario director con contraseña temporal (sin email de activación)
+    const { data: newUserData, error: createError } = await admin.auth.admin.createUser({
+      email:          director_email.trim().toLowerCase(),
+      password:       tempPassword,
+      email_confirm:  true,
+      user_metadata: {
+        first_name:      director_first_name.trim(),
+        last_name:       director_last_name.trim(),
+        role_id:         1,
+        organization_id: org.id,
       },
     })
 
-    if (inviteError) {
-      // Si falla la invitación, eliminar la org para no dejar huérfanos
+    if (createError || !newUserData?.user) {
+      // Si falla, eliminar la org para no dejar huérfanos
       await sb.from('organizations').delete().eq('id', org.id)
 
-      if (inviteError.message?.includes('already registered')) {
+      if (createError?.message?.includes('already registered')) {
         return NextResponse.json(
           { error: 'Ya existe una cuenta con ese email. Usá otro email o contactanos.' },
           { status: 409 }
         )
       }
 
-      console.error('Error creando director:', inviteError)
+      console.error('Error creando director:', createError)
       return NextResponse.json(
         { error: 'No se pudo crear el usuario. Intentá de nuevo.' },
         { status: 500 }
       )
     }
 
-    const newUser = inviteData?.user ?? (inviteData as any)?.user
-
     // Actualizar el perfil creado por el trigger con los datos completos
-    if (newUser?.id) {
-      await sb.from('profiles').update({
-        first_name:      director_first_name.trim(),
-        last_name:       director_last_name.trim(),
-        email:           director_email.trim().toLowerCase(),
-        organization_id: org.id,
-        role_id:         1,
-        is_active:       true,
-      }).eq('id', newUser.id)
-    }
+    await sb.from('profiles').update({
+      first_name:      director_first_name.trim(),
+      last_name:       director_last_name.trim(),
+      email:           director_email.trim().toLowerCase(),
+      organization_id: org.id,
+      role_id:         1,
+      is_active:       true,
+    }).eq('id', newUserData.user.id)
 
     return NextResponse.json({
-      success:      true,
-      slug:         finalSlug,
-      login_url:    `/login?org=${finalSlug}`,
-      message:      `Instituto creado. Se envió un email de activación a ${director_email.trim().toLowerCase()}.`,
+      success:       true,
+      slug:          finalSlug,
+      login_url:     `/login?org=${finalSlug}`,
+      temp_password: tempPassword,
+      message:       `Instituto creado exitosamente.`,
     })
 
   } catch (err: any) {

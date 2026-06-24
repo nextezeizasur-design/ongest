@@ -58,11 +58,12 @@ const Q_TYPE_LABEL: Record<string, string> = {
 }
 
 interface Props {
-  evaluationId?: string   // si se pasa, modo "agregar a evaluación"
+  evaluationId?: string       // modo "guardar en DB" — requiere evaluación existente
   onAdded?: () => void
+  onAddFromBank?: (questions: BankQuestion[]) => void  // modo "draft local" — sin guardar
 }
 
-export default function QuestionBankPage({ evaluationId, onAdded }: Props) {
+export default function QuestionBankPage({ evaluationId, onAdded, onAddFromBank }: Props) {
   const supabase = createClient()
 
   const [questions, setQuestions]   = useState<BankQuestion[]>([])
@@ -137,6 +138,15 @@ export default function QuestionBankPage({ evaluationId, onAdded }: Props) {
     onAdded?.()
   }
 
+  function handleAddLocal() {
+    if (selected.size === 0 || !onAddFromBank) return
+    const selectedQs = questions.filter(q => selected.has(q.id))
+    onAddFromBank(selectedQs)
+    setSelected(new Set())
+    setAddedMsg(`✅ ${selectedQs.length} pregunta${selectedQs.length !== 1 ? "s" : ""} agregada${selectedQs.length !== 1 ? "s" : ""}`)
+    setTimeout(() => setAddedMsg(''), 3000)
+  }
+
   return (
     <div className="space-y-4">
 
@@ -159,6 +169,15 @@ export default function QuestionBankPage({ evaluationId, onAdded }: Props) {
               {adding
                 ? 'Agregando…'
                 : `+ Agregar ${selected.size} pregunta${selected.size !== 1 ? 's' : ''}`}
+            </button>
+          )}
+          {onAddFromBank && selected.size > 0 && (
+            <button
+              onClick={handleAddLocal}
+              className="px-4 py-2 text-sm text-white rounded-xl hover:opacity-90 transition-opacity font-medium"
+              style={{ backgroundColor: '#642f8d' }}
+            >
+              + Agregar {selected.size} pregunta{selected.size !== 1 ? 's' : ''}
             </button>
           )}
           <button
@@ -332,6 +351,18 @@ export default function QuestionBankPage({ evaluationId, onAdded }: Props) {
                               style={isSel ? { backgroundColor: '#642f8d', borderColor: '#642f8d' } : {}}
                             >
                               {isSel ? '✓ Seleccionada' : '+ Agregar'}
+                            </button>
+                          ) : onAddFromBank ? (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); toggleSelect(q.id) }}
+                              className={"text-xs px-3 py-1 rounded-lg font-semibold border-2 transition-all " + (
+                                selected.has(q.id)
+                                  ? "border-purple-500 text-white"
+                                  : "border-purple-300 text-purple-700 hover:border-purple-500 hover:bg-purple-50"
+                              )}
+                              style={selected.has(q.id) ? { backgroundColor: '#642f8d', borderColor: '#642f8d' } : {}}
+                            >
+                              {selected.has(q.id) ? '✓ Seleccionada' : '+ Agregar'}
                             </button>
                           ) : (
                             <button

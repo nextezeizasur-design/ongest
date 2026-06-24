@@ -28,7 +28,62 @@ interface ParsedQuestion {
 
 // ─── Prompt para Claude ───────────────────────────────────────────────────────
 
+// ─── Pre-procesar texto para marcar bloques de Reading ───────────────────────
+// Detecta textos de lectura largos y los envuelve con marcadores para que
+// Claude no los confunda con ítems del examen.
+
+function preprocessText(text: string): string {
+  // Detectar patrones de texto de lectura:
+  // Líneas seguidas sin números que forman párrafos (más de 3 líneas consecutivas sin números al inicio)
+  const lines = text.split('\n')
+  const result: string[] = []
+  let inReadingText = false
+  let readingBuffer: string[] = []
+  let consecutiveNonItems = 0
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim()
+    const isItem = /^\d+\s/.test(line) || /^[a-f]\s/.test(line) || /^Score:/.test(line) || /^(LISTENING|GRAMMAR|VOCABULARY|READING|WRITING|SPEAKING)$/.test(line)
+    const isBlank = line.length === 0
+    const isLongText = line.length > 60 && !isItem
+
+    if (isLongText && !isItem) {
+      consecutiveNonItems++
+      readingBuffer.push(line)
+      if (consecutiveNonItems >= 2 && !inReadingText) {
+        inReadingText = true
+        // Marcar inicio del texto de lectura
+        if (readingBuffer.length > 0) {
+          result.push('<<<READING_TEXT_START>>>')
+          result.push(...readingBuffer)
+        }
+        readingBuffer = []
+      } else if (inReadingText) {
+        result.push(line)
+      }
+    } else {
+      if (inReadingText && !isBlank) {
+        result.push('<<<READING_TEXT_END>>>')
+        inReadingText = false
+        consecutiveNonItems = 0
+        readingBuffer = []
+      } else if (readingBuffer.length > 0 && !inReadingText) {
+        result.push(...readingBuffer)
+        readingBuffer = []
+        consecutiveNonItems = 0
+      }
+      result.push(line)
+    }
+  }
+
+  if (inReadingText) result.push('<<<READING_TEXT_END>>>')
+  if (readingBuffer.length > 0) result.push(...readingBuffer)
+
+  return result.join('\n')
+}
+
 function buildPrompt(text: string, cefrLevel: string | null): string {
+  const processedText = preprocessText(text)
   return `Sos un experto en análisis de exámenes de inglés EFL/ESL. Analizá el texto completo del examen y extraé TODOS los ejercicios.
 
 REGLAS GENERALES:
@@ -92,20 +147,20 @@ READING COMPREHENSION (completar oraciones sobre un texto):
 - needs_review: true
 - instruction: debe incluir el título del texto y la consigna original
 
-IMPORTANTE — TEXTO DE READING:
-Si hay un texto de lectura largo seguido de ítems para completar:
-- El campo "instruction" de CADA ítem debe contener: la consigna original + el texto completo de la lectura.
-- El campo "body" de CADA ítem debe contener: solo la oración incompleta que el alumno debe completar.
-- Ejemplo de body: "Linda and her dad don't have the same colour ___."
-- Ejemplo de instruction: "Read the text about Linda and her family. Complete the sentences. TEXT: My name's Linda and I have three sisters..."
-- Es CRÍTICO que el texto de la lectura quede en la instruction para que el alumno pueda leerlo al rendir el examen.
+TEXTO DE READING — MUY IMPORTANTE:
+El texto de lectura estará marcado entre <<<READING_TEXT_START>>> y <<<READING_TEXT_END>>>.
+Para CADA ítem que pertenezca a ese ejercicio de Reading:
+- "body": solo la oración incompleta (ej: "Linda and her dad don't have the same colour ___.")
+- "instruction": debe incluir: 1) la consigna original completa, y 2) el texto COMPLETO de la lectura tal como aparece entre los marcadores. No lo recortes ni lo resumas bajo ningún concepto.
+- Ejemplo de instruction: "Read the text about Linda and her family. Complete the sentences (1-5).\n\nTEXTO: My name's Linda and I have three sisters. Two of them..."
+- Es CRÍTICO que el texto íntegro quede en instruction — el alumno lo necesita para responder.
 
 Nivel CEFR: ${cefrLevel || 'A2'}
 difficulty_label: ${cefrLevel && ['A1','A2'].includes(cefrLevel) ? 'easy' : cefrLevel && ['B1','B2'].includes(cefrLevel) ? 'medium' : 'medium'}
 difficulty_score: ${cefrLevel === 'A1' ? 20 : cefrLevel === 'A2' ? 35 : cefrLevel === 'B1' ? 50 : cefrLevel === 'B2' ? 65 : cefrLevel === 'C1' ? 80 : 35}
 
 TEXTO COMPLETO DEL EXAMEN:
-${text}
+${processedText}
 
 Respondé ÚNICAMENTE con el array JSON. Sin texto previo ni posterior. Sin markdown.`
 }

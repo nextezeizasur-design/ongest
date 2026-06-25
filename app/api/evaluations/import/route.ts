@@ -324,7 +324,7 @@ Nivel CEFR: \${cefrLevel || 'A2'}
 difficulty_label: \${cefrLevel && ['A1','A2'].includes(cefrLevel) ? 'easy' : 'medium'}
 difficulty_score: \${cefrLevel === 'A1' ? 20 : cefrLevel === 'A2' ? 35 : cefrLevel === 'B1' ? 50 : cefrLevel === 'B2' ? 65 : 35}
 
-Respondé ÚNICAMENTE con el array JSON. Sin texto previo ni posterior. Sin markdown.\`
+Respondé ÚNICAMENTE con el array JSON. Sin texto previo ni posterior. Sin markdown.`
 }
 
 async function parseWithClaudeVision(

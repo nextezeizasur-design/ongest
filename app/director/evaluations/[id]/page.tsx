@@ -43,6 +43,11 @@ export default async function DirectorEvaluationDetail({
     </div>
   )
 
+  const now           = new Date()
+  const availFrom     = ev.available_from ? new Date(ev.available_from) : null
+  const notStartedYet = availFrom ? availFrom > now : false
+  const attemptCount  = (attempts ?? []).filter((a: any) => ['submitted','graded','in_progress'].includes(a.status)).length
+  const canEdit       = ev.status === 'draft' || (ev.status === 'published' && notStartedYet && attemptCount === 0)
   const st            = getEvalStatus({ status: ev.status, available_until: ev.available_until })
   const completedAtts = (attempts ?? []).filter((a: any) => ['submitted','graded'].includes(a.status))
   const pendingGrade  = completedAtts.filter((a: any) => a.status === 'submitted')
@@ -65,6 +70,11 @@ export default async function DirectorEvaluationDetail({
           <div className="flex gap-2">
             <a href="/director/evaluations" className="btn-outline text-xs py-1.5">← Volver</a>
             <Badge variant={BADGE[st] ?? 'gray'}>{EVAL_STATUS_LABEL[st]}</Badge>
+            {canEdit && (
+              <a href={`/director/evaluations/${id}/edit`} className="btn-outline text-sm">
+                ✏️ Editar
+              </a>
+            )}
             {ev.status === 'draft' && <PublishButton evalId={id} />}
             <DeleteEvaluationButton evalId={id} status={ev.status} title={ev.title} backHref="/director/evaluations" />
           </div>

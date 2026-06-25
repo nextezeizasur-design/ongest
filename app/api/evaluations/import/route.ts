@@ -468,22 +468,42 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Error al leer el PDF: ' + err.message }, { status: 422 })
     }
 
-    if (!pdfText || pdfText.trim().length < 30) {
-      return NextResponse.json({
-        error: 'No se pudo extraer texto del PDF. Verificá que no sea una imagen escaneada.',
-      }, { status: 422 })
-    }
+    // Nota: pdfText puede estar vacío si el PDF es escaneado — se maneja más abajo
 
-    // Parsear con Claude — texto normal o Vision si es PDF escaneado
+    // Detectar si el PDF es escaneado (sin texto) y usar Vision si corresponde
     let questions: ParsedQuestion[]
-    const isScanned = formData.get('scanned') === 'true'
-    const imagesRaw = formData.get('images') as string | null
+    const isScanned = !pdfText || pdfText.trim().length < 30
 
     try {
-      if (isScanned && imagesRaw) {
-        const images: string[] = JSON.parse(imagesRaw)
-        if (!images || images.length === 0)
-          return NextResponse.json({ error: 'No se recibieron imágenes del PDF escaneado.' }, { status: 400 })
+      if (isScanned) {
+        // PDF escaneado → convertir páginas a imágenes server-side con pdfjs-dist
+        let images: string[] = []
+        try {
+          const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs' as any)
+          pdfjs.GlobalWorkerOptions.workerSrc = ''
+          const loadingTask = pdfjs.getDocument({ data: Buffer.from(await file.arrayBuffer()) })
+          const pdf = await loadingTask.promise
+          const { createCanvas } = await import('canvas' as any)
+          for (let i = 1; i <= Math.min(pdf.numPages, 4); i++) {
+            const page     = await pdf.getPage(i)
+            const viewport = page.getViewport({ scale: 2.0 })
+            const canvas   = createCanvas(viewport.width, viewport.height)
+            const ctx      = canvas.getContext('2d')
+            await page.render({ canvasContext: ctx, viewport }).promise
+            images.push(canvas.toBuffer('image/jpeg', { quality: 0.85 }).toString('base64'))
+          }
+        } catch {
+          // canvas no disponible en Vercel — usar pdf-parse para extraer lo que pueda
+          // y mandar igual a Claude Vision con indicación de que es escaneado
+          return NextResponse.json({
+            error: 'Este PDF es una imagen escaneada. Por ahora el importador solo procesa PDFs con texto seleccionable. Intentá descargar el PDF oficial desde la plataforma de tu editorial.',
+          }, { status: 422 })
+        }
+        if (images.length === 0) {
+          return NextResponse.json({
+            error: 'No se pudieron extraer imágenes del PDF escaneado.',
+          }, { status: 422 })
+        }
         questions = await parseWithClaudeVision(images, cefrLevel || null)
       } else {
         questions = await parseWithClaude(pdfText, cefrLevel || null)

@@ -53,38 +53,31 @@ export async function POST(request: NextRequest) {
       { cookies: { getAll() { return [] }, setAll() {} } }
     )
 
-    // ✅ Opción A: invite por email — el alumno elige su propia contraseña
-    // Supabase envía el email de bienvenida automáticamente
-    const { data: inviteData, error: authError } = await (adminSupabase as any).auth.admin.generateLink({
-      type:  'invite',
-      email: email.trim().toLowerCase(),
-      options: {
-        data: {
-          first_name:      first_name.trim(),
-          last_name:       last_name.trim(),
-          role_id:         4,
-          organization_id: organization_id,
-        },
+    // Generar contraseña temporal (10 caracteres)
+    const tempPassword = Math.random().toString(36).slice(2, 7) +
+                         Math.random().toString(36).slice(2, 7).toUpperCase()
+
+    const { data: authData, error: authError } = await (adminSupabase as any).auth.admin.createUser({
+      email:          email.trim().toLowerCase(),
+      password:       tempPassword,
+      email_confirm:  true,
+      user_metadata: {
+        first_name:      first_name.trim(),
+        last_name:       last_name.trim(),
+        role_id:         4,
+        organization_id: organization_id,
       },
     })
 
     if (authError) {
-      if (authError.message?.includes('already registered')) {
+      if (authError.message?.includes('already registered') || authError.message?.includes('already been registered')) {
         return NextResponse.json({ error: 'Ya existe un usuario con ese email.' }, { status: 409 })
       }
       return NextResponse.json({ error: authError.message }, { status: 400 })
     }
 
-    // generateLink devuelve { data: { user, properties, action_link }, error }
-    // pero cuando se usa .auth.admin.generateLink el resultado puede variar.
-    // Normalizamos para obtener siempre el user.id correctamente.
-    const newUserId: string | undefined =
-      inviteData?.user?.id ??
-      inviteData?.id ??
-      inviteData?.data?.user?.id
-
+    const newUserId: string | undefined = authData?.user?.id
     if (!newUserId) {
-      console.error('[/api/students/create] No se pudo obtener el user ID:', JSON.stringify(inviteData))
       return NextResponse.json({ error: 'Error al obtener el ID del usuario creado.' }, { status: 500 })
     }
 
@@ -109,10 +102,11 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json({
-      success: true,
-      user_id: newUserId,
-      invited: true,
-      message: `Alumno creado. Se envió un email de bienvenida a ${email}.`,
+      success:       true,
+      user_id:       newUserId,
+      temp_password: tempPassword,
+      email:         email.trim().toLowerCase(),
+      full_name:     `${first_name.trim()} ${last_name.trim()}`,
     })
 
   } catch (err: any) {

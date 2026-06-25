@@ -173,6 +173,31 @@ export default function NewEvaluationPage() {
   }
 
   // ── Importador: procesar PDF ──
+  // Convierte las páginas de un PDF a imágenes base64 usando pdfjs-dist (browser)
+  async function pdfToImages(file: File): Promise<string[]> {
+    const pdfjsLib = await import('pdfjs-dist')
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+      `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`
+
+    const arrayBuffer = await file.arrayBuffer()
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
+    const images: string[] = []
+
+    for (let i = 1; i <= Math.min(pdf.numPages, 4); i++) {
+      const page    = await pdf.getPage(i)
+      const scale   = 2.0  // alta resolución para mejor OCR
+      const viewport = page.getViewport({ scale })
+
+      const canvas    = document.createElement('canvas')
+      canvas.width    = viewport.width
+      canvas.height   = viewport.height
+      const ctx       = canvas.getContext('2d')!
+      await page.render({ canvasContext: ctx, viewport }).promise
+      images.push(canvas.toDataURL('image/jpeg', 0.85).split(',')[1])
+    }
+    return images
+  }
+
   async function handleImportPdf() {
     if (!importFile) { setImportError('Seleccioná un archivo PDF.'); return }
     setImportLoading(true)
@@ -184,6 +209,38 @@ export default function NewEvaluationPage() {
     form.append('publisher',  importPublisher)
 
     try {
+      // Intentar extraer texto en el cliente primero
+      // Si el PDF es escaneado (sin texto), convertir a imágenes para Claude Vision
+      let hasText = false
+      try {
+        const pdfjsLib = await import('pdfjs-dist')
+        pdfjsLib.GlobalWorkerOptions.workerSrc =
+          `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`
+        const ab  = await importFile.arrayBuffer()
+        const pdf = await pdfjsLib.getDocument({ data: ab }).promise
+        const page = await pdf.getPage(1)
+        const textContent = await page.getTextContent()
+        hasText = textContent.items.length > 10
+      } catch { hasText = false }
+
+      if (!hasText) {
+        // PDF escaneado — convertir páginas a imágenes y mandar a Claude Vision
+        setImportError(null)
+        let images: string[] = []
+        try {
+          images = await pdfToImages(importFile)
+        } catch (e: any) {
+          setImportError('No se pudo convertir el PDF a imagen: ' + e.message)
+          return
+        }
+        if (images.length === 0) {
+          setImportError('No se pudo procesar el PDF. Intentá con otro archivo.')
+          return
+        }
+        form.append('images', JSON.stringify(images))
+        form.append('scanned', 'true')
+      }
+
       const res  = await fetch('/api/evaluations/import', { method: 'POST', body: form })
       const data = await res.json()
       if (!res.ok) { setImportError(data.error ?? 'Error procesando el PDF.'); return }
@@ -206,19 +263,13 @@ export default function NewEvaluationPage() {
   function handleAddImported() {
     if (!importedQs) return
     const toAdd = importedQs.filter(q => q._checked)
-    const drafted: QuestionDraft[] = toAdd.map(q => {
-      // Incluir la consigna al inicio del body para que quede visible en el examen
-      const fullBody = q.instruction
-        ? `📌 ${q.instruction}\n\n${q.body}`
-        : q.body
-      return {
-        id:      genId(),
-        q_type:  q.q_type as QuestionType,
-        body:    fullBody,
-        points:  q.points,
-        options: q.options.map(o => ({ id: genId(), body: o.body, is_correct: o.is_correct })),
-      }
-    })
+    const drafted: QuestionDraft[] = toAdd.map(q => ({
+      id:      genId(),
+      q_type:  q.q_type as QuestionType,
+      body:    q.body,
+      points:  q.points,
+      options: q.options.map(o => ({ id: genId(), body: o.body, is_correct: o.is_correct })),
+    }))
     setQuestions(prev => [...prev, ...drafted])
     // Reset importador
     setImportedQs(null)
@@ -604,11 +655,6 @@ export default function NewEvaluationPage() {
                 className={`btn-outline flex items-center gap-1.5 ${showBank ? 'ring-2 ring-purple-300' : ''}`}>
                 📚 {showBank ? 'Cerrar banco' : 'Agregar desde banco'}
               </button>
-
-              <button onClick={() => { setShowImport(p => !p); setShowBank(false); setShowExercise(false) }}
-                className={`btn-outline flex items-center gap-1.5 ${showImport ? 'ring-2 ring-purple-300' : ''}`}>
-                📄 {showImport ? 'Cerrar importador' : 'Importar desde PDF'}
-              </button>
             </div>
 
             {/* ── Panel editor de ejercicios ── */}
@@ -835,16 +881,11 @@ export default function NewEvaluationPage() {
                                 </div>
                               )}
 
-                              {/* Consigna del ejercicio */}
+                              {/* Instrucción original */}
                               {q.instruction && (
-                                <div className="mt-2 rounded-lg border border-purple-200 bg-purple-50 px-3 py-2">
-                                  <p className="text-[10px] font-semibold uppercase tracking-wide text-purple-500 mb-1">
-                                    📌 Consigna
-                                  </p>
-                                  <p className="text-[11px] leading-relaxed text-purple-900 whitespace-pre-line">
-                                    {q.instruction}
-                                  </p>
-                                </div>
+                                <p className="text-[10px] text-purple-500 mt-1 italic">
+                                  {q.section && `[${q.section}] `}{q.instruction.slice(0, 80)}{q.instruction.length > 80 ? '…' : ''}
+                                </p>
                               )}
                             </div>
                           </div>

@@ -48,6 +48,9 @@ export default async function StudentResultPage({
       text_answer,
       manual_score,
       feedback_text,
+      grader_note,
+      is_correct,
+      points_earned,
       questions (
         id, body, q_type, points, sort_order,
         options ( id, body, is_correct )
@@ -150,9 +153,14 @@ export default async function StudentResultPage({
                             {ans.manual_score} / {q.points} pts
                           </span>
                         )}
-                        {isOpen && (ans.manual_score === null || ans.manual_score === undefined) && (
+                        {isOpen && ans.manual_score === null && ans.manual_score === undefined && !ans.grader_note && !(ans.points_earned > 0) && (
                           <span className="text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded-full">
                             Pendiente
+                          </span>
+                        )}
+                        {isOpen && !['speaking'].includes(q.q_type) && (ans.grader_note || ans.points_earned > 0) && (
+                          <span className="text-xs font-medium text-purple-700 bg-purple-100 px-2 py-1 rounded-full">
+                            {ans.points_earned ?? 0} / {q.points} pts
                           </span>
                         )}
                       </div>
@@ -196,14 +204,14 @@ export default async function StudentResultPage({
                       </div>
                     )}
 
-                    {/* Feedback del docente — solo si existe */}
-                    {ans.feedback_text && (
+                    {/* Comentario del docente — grader_note (short/essay) o feedback_text (speaking) */}
+                    {(ans.grader_note || ans.feedback_text) && (
                       <div className="mt-3 bg-blue-50 border border-blue-200 rounded-lg px-4 py-3">
                         <p className="text-xs font-semibold text-blue-700 mb-1">
-                          💬 Corrección del docente
+                          💬 Comentario del docente
                         </p>
                         <p className="text-sm text-blue-900 whitespace-pre-line">
-                          {ans.feedback_text}
+                          {ans.grader_note || ans.feedback_text}
                         </p>
                       </div>
                     )}

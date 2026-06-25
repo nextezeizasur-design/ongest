@@ -320,9 +320,9 @@ REGLAS POR TIPO:
 - TRUE/FALSE: q_type="true_false", options=[{body:"True",is_correct:false},{body:"False",is_correct:false}]
 - READING COMPREHENSION: q_type="short_answer", options:[], instruction=consigna+título
 
-Nivel CEFR: \${cefrLevel || 'A2'}
-difficulty_label: \${cefrLevel && ['A1','A2'].includes(cefrLevel) ? 'easy' : 'medium'}
-difficulty_score: \${cefrLevel === 'A1' ? 20 : cefrLevel === 'A2' ? 35 : cefrLevel === 'B1' ? 50 : cefrLevel === 'B2' ? 65 : 35}
+Nivel CEFR: ${cefrLevel || 'A2'}
+difficulty_label: ${cefrLevel && ['A1','A2'].includes(cefrLevel) ? 'easy' : 'medium'}
+difficulty_score: ${cefrLevel === 'A1' ? 20 : cefrLevel === 'A2' ? 35 : cefrLevel === 'B1' ? 50 : cefrLevel === 'B2' ? 65 : 35}
 
 Respondé ÚNICAMENTE con el array JSON. Sin texto previo ni posterior. Sin markdown.`
 }

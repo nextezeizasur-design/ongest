@@ -320,6 +320,52 @@ export default function NewEvaluationPage() {
       return
     }
 
+    // ── Auto-guardar preguntas al banco si se publica ──────────────────────
+    if (status === 'published') {
+      try {
+        // Obtener las preguntas recién insertadas con sus opciones
+        const { data: savedQuestions } = await sb
+          .from('questions')
+          .select('*, options(*)')
+          .eq('evaluation_id', ev.id)
+
+        if (savedQuestions && savedQuestions.length > 0) {
+          for (const q of savedQuestions) {
+            // Evitar duplicados: saltar speaking y preguntas sin body
+            if (!q.body?.trim() || q.q_type === 'speaking') continue
+
+            // Insertar en question_bank
+            const { data: bankQ } = await sb.from('question_bank').insert({
+              organization_id:  profile?.organization_id,
+              body:             q.body.trim(),
+              q_type:           q.q_type,
+              difficulty_label: q.difficulty_label ?? 'medium',
+              difficulty_score: q.difficulty_score ?? 50,
+              skill:            q.skill ?? null,
+              topic:            q.topic ?? null,
+              explanation:      q.expected_answer ?? null,
+              created_by:       user.id,
+            }).select('id').single()
+
+            // Copiar opciones si las hay
+            if (bankQ && q.options && q.options.length > 0) {
+              await sb.from('question_bank_options').insert(
+                q.options.map((o: any, i: number) => ({
+                  question_id: bankQ.id,
+                  body:        o.body,
+                  is_correct:  o.is_correct,
+                  sort_order:  o.sort_order ?? i + 1,
+                }))
+              )
+            }
+          }
+        }
+      } catch (bankErr) {
+        // No bloquear el flujo si falla el banco — es secundario
+        console.error('[banco] Error al auto-guardar preguntas:', bankErr)
+      }
+    }
+
     // ── Toast + redirect ──
     if (status === 'published') {
       toast.success('Evaluación publicada correctamente', `"${title.trim()}" ya está disponible para los alumnos.`)

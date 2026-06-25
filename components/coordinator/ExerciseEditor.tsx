@@ -16,6 +16,7 @@ export type ExerciseType =
   | 'complete'     // Complete the sentences
   | 'writing'      // Free writing prompt
   | 'reading'      // Texto + preguntas de comprensión
+  | 'listening'    // Audio + consigna + preguntas T/F o múltiple opción
 
 export interface ExerciseQuestion {
   id:          string
@@ -50,6 +51,7 @@ const EXERCISE_TYPES: { type: ExerciseType; label: string; icon: string; desc: s
   { type: 'complete',  icon: '✍️', label: 'Complete',       desc: 'Completar oraciones con la palabra correcta' },
   { type: 'writing',   icon: '📝', label: 'Writing',        desc: 'Redacción libre con guías o preguntas orientadoras' },
   { type: 'reading',   icon: '📖', label: 'Reading',        desc: 'Texto de lectura con párrafos y preguntas de comprensión opcionales' },
+  { type: 'listening',  icon: '🎧', label: 'Listening',      desc: 'Audio con consigna y preguntas de comprensión auditiva' },
 ]
 
 const SKILL_OPTIONS = [
@@ -68,6 +70,7 @@ const DEFAULT_INSTRUCTIONS: Record<ExerciseType, string> = {
   complete:  'Complete the sentences with the correct word.',
   writing:   'Write a short paragraph. Use the questions below as a guide.',
   reading:   'Read the text.',
+  listening: 'Listen to the audio and answer the questions.',
 }
 
 const DEFAULT_SKILL: Record<ExerciseType, string> = {
@@ -78,6 +81,7 @@ const DEFAULT_SKILL: Record<ExerciseType, string> = {
   complete:  'vocabulary',
   writing:   'writing',
   reading:   'reading',
+  listening: 'listening',
 }
 
 function uid() { return Math.random().toString(36).slice(2, 9) }
@@ -124,6 +128,18 @@ export default function ExerciseEditor({ onAdd, onCancel }: ExerciseEditorProps)
     { id: uid(), body: '', q_type: 'short_answer', options: ['', '', '', ''], correct: 0, answer: '' },
   ])
   const [readingHasQuestions, setReadingHasQuestions] = useState(true)
+
+  // Listening
+  const [listeningAudioUrl,   setListeningAudioUrl]   = useState('')
+  const [listeningAudioFile,  setListeningAudioFile]  = useState<File | null>(null)
+  const [listeningQuestions,  setListeningQuestions]  = useState<{
+    id: string; body: string; q_type: 'true_false' | 'multiple_choice' | 'short_answer'
+    options: string[]; correct: number; answer: string
+  }[]>([
+    { id: uid(), body: '', q_type: 'true_false',       options: ['True', 'False'], correct: 0, answer: '' },
+    { id: uid(), body: '', q_type: 'true_false',       options: ['True', 'False'], correct: 0, answer: '' },
+    { id: uid(), body: '', q_type: 'true_false',       options: ['True', 'False'], correct: 0, answer: '' },
+  ])
 
   function handleSelectType(t: ExerciseType) {
     setExType(t)
@@ -257,6 +273,55 @@ export default function ExerciseEditor({ onAdd, onCancel }: ExerciseEditorProps)
         return qs
       }
 
+      case 'listening': {
+        const audioRef = listeningAudioFile
+          ? `[AUDIO: ${listeningAudioFile.name}]`
+          : listeningAudioUrl.trim()
+          ? `[AUDIO URL: ${listeningAudioUrl.trim()}]`
+          : '[AUDIO PENDIENTE]'
+
+        return listeningQuestions
+          .filter(lq => lq.body.trim())
+          .map(lq => {
+            const body = `${audioRef}\n${lq.body.trim()}`
+            if (lq.q_type === 'true_false') {
+              return {
+                id:          uid(),
+                body,
+                options:     [
+                  { body: 'True',  is_correct: lq.correct === 0 },
+                  { body: 'False', is_correct: lq.correct === 1 },
+                ],
+                q_type:      'multiple_choice' as const,
+                skill:       'listening',
+                points,
+                explanation: lq.answer.trim(),
+              }
+            }
+            if (lq.q_type === 'multiple_choice') {
+              const opts = lq.options.filter(o => o.trim())
+              return {
+                id:          uid(),
+                body,
+                options:     opts.map((o, i) => ({ body: o.trim(), is_correct: i === lq.correct })),
+                q_type:      'multiple_choice' as const,
+                skill:       'listening',
+                points,
+                explanation: lq.answer.trim(),
+              }
+            }
+            return {
+              id:          uid(),
+              body,
+              options:     [],
+              q_type:      'short_answer' as const,
+              skill:       'listening',
+              points,
+              explanation: lq.answer.trim(),
+            }
+          })
+      }
+
       default: {
         // order, error, complete
         return simpleItems
@@ -320,6 +385,7 @@ export default function ExerciseEditor({ onAdd, onCancel }: ExerciseEditorProps)
     : exType === 'match' ? matchLeft.filter((l, i) => l.trim() && matchRight[i]?.trim()).length
     : exType === 'underline' ? underlineItems.filter(i => i.opt1.trim() && i.opt2.trim()).length
     : exType === 'reading' ? (readingHasQuestions ? readingQuestions.filter(q => q.body.trim()).length : 1)
+    : exType === 'listening' ? listeningQuestions.filter(q => q.body.trim()).length
     : simpleItems.filter(i => i.body.trim()).length
 
   return (
@@ -810,6 +876,186 @@ export default function ExerciseEditor({ onAdd, onCancel }: ExerciseEditorProps)
               </button>
             </div>
           )}
+        </div>
+      )}
+
+      {/* LISTENING */}
+      {exType === 'listening' && (
+        <div className="space-y-4">
+
+          {/* Audio */}
+          <div>
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Audio</p>
+            <div className="rounded-xl border-2 border-dashed border-gray-200 p-4 space-y-3">
+              {/* Subir archivo */}
+              <div>
+                <label className="label text-xs mb-1">Subir archivo de audio</label>
+                <label className="flex items-center gap-3 cursor-pointer rounded-lg border border-gray-200 px-3 py-2.5 hover:bg-gray-50 transition-colors">
+                  <span className="text-xl">🎵</span>
+                  <div className="flex-1 min-w-0">
+                    {listeningAudioFile
+                      ? <p className="text-sm text-gray-900 truncate">{listeningAudioFile.name}</p>
+                      : <p className="text-sm text-gray-400">Elegir archivo MP3, M4A o WAV…</p>
+                    }
+                  </div>
+                  <input
+                    type="file"
+                    accept="audio/*"
+                    className="sr-only"
+                    onChange={e => {
+                      const f = e.target.files?.[0] ?? null
+                      setListeningAudioFile(f)
+                      if (f) setListeningAudioUrl('')
+                    }}
+                  />
+                  <span className="text-xs text-purple-600 font-medium flex-shrink-0">
+                    {listeningAudioFile ? 'Cambiar' : 'Elegir'}
+                  </span>
+                </label>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <div className="flex-1 h-px bg-gray-200" />
+                <span className="text-xs text-gray-400">o</span>
+                <div className="flex-1 h-px bg-gray-200" />
+              </div>
+
+              {/* URL externa */}
+              <div>
+                <label className="label text-xs mb-1">URL del audio (Google Drive, Dropbox, etc.)</label>
+                <input
+                  type="url"
+                  value={listeningAudioUrl}
+                  onChange={e => { setListeningAudioUrl(e.target.value); setListeningAudioFile(null) }}
+                  placeholder="https://drive.google.com/..."
+                  className="input text-sm"
+                />
+              </div>
+
+              {/* Preview del audio si hay URL */}
+              {listeningAudioUrl.trim() && (
+                <audio controls className="w-full rounded-lg" src={listeningAudioUrl.trim()}>
+                  Tu navegador no soporta audio.
+                </audio>
+              )}
+            </div>
+          </div>
+
+          {/* Preguntas */}
+          <div className="space-y-3">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Preguntas</p>
+            {listeningQuestions.map((lq, i) => (
+              <div key={lq.id} className="rounded-xl border border-gray-200 bg-gray-50/50 p-3 space-y-2">
+                <div className="flex items-start gap-2">
+                  <span className="text-xs text-gray-400 mt-2 w-4 flex-shrink-0">{i + 1}</span>
+                  <textarea
+                    rows={2}
+                    value={lq.body}
+                    onChange={e => setListeningQuestions(prev => prev.map((x, j) => j === i ? { ...x, body: e.target.value } : x))}
+                    placeholder="Ej: It's hot where Dimitra is staying now."
+                    className="textarea text-sm flex-1"
+                  />
+                  <div className="flex flex-col gap-1 flex-shrink-0">
+                    <select
+                      value={lq.q_type}
+                      onChange={e => setListeningQuestions(prev => prev.map((x, j) =>
+                        j === i ? { ...x, q_type: e.target.value as any } : x
+                      ))}
+                      className="input text-xs w-36"
+                    >
+                      <option value="true_false">True / False</option>
+                      <option value="multiple_choice">Múltiple opción</option>
+                      <option value="short_answer">Respuesta corta</option>
+                    </select>
+                    <button
+                      onClick={() => setListeningQuestions(prev => prev.filter((_, j) => j !== i))}
+                      disabled={listeningQuestions.length <= 1}
+                      className="text-xs text-gray-400 hover:text-red-500 disabled:opacity-20 text-right"
+                    >
+                      Eliminar
+                    </button>
+                  </div>
+                </div>
+
+                {/* True / False */}
+                {lq.q_type === 'true_false' && (
+                  <div className="pl-6 flex gap-4">
+                    {['True', 'False'].map((opt, oi) => (
+                      <button
+                        key={oi}
+                        onClick={() => setListeningQuestions(prev => prev.map((x, j) => j === i ? { ...x, correct: oi } : x))}
+                        className={`flex items-center gap-1.5 text-sm px-3 py-1 rounded-lg border-2 transition-colors ${
+                          lq.correct === oi
+                            ? 'border-green-500 bg-green-50 text-green-700 font-medium'
+                            : 'border-gray-200 text-gray-500 hover:border-gray-300'
+                        }`}
+                      >
+                        {lq.correct === oi && (
+                          <svg viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth={2} className="h-3 w-3">
+                            <path d="M2 5l2 2L8 2.5"/>
+                          </svg>
+                        )}
+                        {opt}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {/* Múltiple opción */}
+                {lq.q_type === 'multiple_choice' && (
+                  <div className="pl-6 space-y-1.5">
+                    {lq.options.slice(0, 4).map((opt, oi) => (
+                      <div key={oi} className="flex items-center gap-2">
+                        <button
+                          onClick={() => setListeningQuestions(prev => prev.map((x, j) => j === i ? { ...x, correct: oi } : x))}
+                          className={`flex-shrink-0 w-4 h-4 rounded-full border-2 flex items-center justify-center transition-colors ${
+                            lq.correct === oi ? 'border-green-500 bg-green-500' : 'border-gray-300 hover:border-green-400'
+                          }`}
+                        >
+                          {lq.correct === oi && (
+                            <svg viewBox="0 0 8 8" fill="none" stroke="white" strokeWidth={2} className="h-2 w-2">
+                              <path d="M1.5 4l2 2L6.5 2"/>
+                            </svg>
+                          )}
+                        </button>
+                        <input
+                          type="text"
+                          value={opt}
+                          onChange={e => setListeningQuestions(prev => prev.map((x, j) =>
+                            j === i ? { ...x, options: x.options.map((o, k) => k === oi ? e.target.value : o) } : x
+                          ))}
+                          placeholder={`Opción ${String.fromCharCode(65 + oi)}`}
+                          className={`input text-xs flex-1 ${lq.correct === oi ? 'border-green-200 bg-green-50' : ''}`}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Respuesta corta */}
+                {lq.q_type === 'short_answer' && (
+                  <div className="pl-6">
+                    <input
+                      type="text"
+                      value={lq.answer}
+                      onChange={e => setListeningQuestions(prev => prev.map((x, j) => j === i ? { ...x, answer: e.target.value } : x))}
+                      placeholder="Respuesta correcta (referencia del docente)"
+                      className="input text-xs w-full"
+                    />
+                  </div>
+                )}
+              </div>
+            ))}
+
+            <button
+              onClick={() => setListeningQuestions(prev => [...prev, {
+                id: uid(), body: '', q_type: 'true_false', options: ['True', 'False'], correct: 0, answer: ''
+              }])}
+              className="text-xs text-purple-600 hover:text-purple-800"
+            >
+              + Agregar pregunta
+            </button>
+          </div>
         </div>
       )}
 

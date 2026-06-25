@@ -16,6 +16,7 @@ interface QuestionDraft {
   q_type: QuestionType
   body: string
   points: number
+  skill: string
   options: { id: string; body: string; is_correct: boolean }[]
   expected_answer?: string
   keywords?: string
@@ -132,7 +133,7 @@ export default function NewEvaluationPage() {
 
   function addQuestion(type: QuestionType) {
     const newQ: QuestionDraft = {
-      id: genId(), q_type: type, body: '', points: 1,
+      id: genId(), q_type: type, body: '', points: 1, skill: 'grammar',
       options: type === 'true_false'
         ? [{ id: genId(), body: 'True', is_correct: true }, { id: genId(), body: 'False', is_correct: false }]
         : type === 'multiple_choice'
@@ -217,6 +218,7 @@ export default function NewEvaluationPage() {
         q_type:  q.q_type as QuestionType,
         body:    fullBody,
         points:  q.points,
+        skill:   q.skill || 'grammar',
         options: q.options.map(o => ({ id: genId(), body: o.body, is_correct: o.is_correct })),
       }
     })
@@ -296,6 +298,7 @@ export default function NewEvaluationPage() {
         q_type:            q.q_type,
         body:              q.body.trim(),
         points:            q.points,
+        skill:             q.skill || 'grammar',
         expected_answer:   q.expected_answer || null,
         keywords:          q.keywords ? q.keywords.split(',').map((k: string) => k.trim()).filter(Boolean) : null,
         speaking_time_sec: q.speaking_time_sec ?? null,
@@ -318,52 +321,6 @@ export default function NewEvaluationPage() {
       setError('Error al guardar las preguntas. Verificá que todos los tipos de pregunta estén configurados correctamente.')
       setSaving(false)
       return
-    }
-
-    // ── Auto-guardar preguntas al banco si se publica ──────────────────────
-    if (status === 'published') {
-      try {
-        // Obtener las preguntas recién insertadas con sus opciones
-        const { data: savedQuestions } = await sb
-          .from('questions')
-          .select('*, options(*)')
-          .eq('evaluation_id', ev.id)
-
-        if (savedQuestions && savedQuestions.length > 0) {
-          for (const q of savedQuestions) {
-            // Evitar duplicados: saltar speaking y preguntas sin body
-            if (!q.body?.trim() || q.q_type === 'speaking') continue
-
-            // Insertar en question_bank
-            const { data: bankQ } = await sb.from('question_bank').insert({
-              organization_id:  profile?.organization_id,
-              body:             q.body.trim(),
-              q_type:           q.q_type,
-              difficulty_label: q.difficulty_label ?? 'medium',
-              difficulty_score: q.difficulty_score ?? 50,
-              skill:            q.skill ?? null,
-              topic:            q.topic ?? null,
-              explanation:      q.expected_answer ?? null,
-              created_by:       user.id,
-            }).select('id').single()
-
-            // Copiar opciones si las hay
-            if (bankQ && q.options && q.options.length > 0) {
-              await sb.from('question_bank_options').insert(
-                q.options.map((o: any, i: number) => ({
-                  question_id: bankQ.id,
-                  body:        o.body,
-                  is_correct:  o.is_correct,
-                  sort_order:  o.sort_order ?? i + 1,
-                }))
-              )
-            }
-          }
-        }
-      } catch (bankErr) {
-        // No bloquear el flujo si falla el banco — es secundario
-        console.error('[banco] Error al auto-guardar preguntas:', bankErr)
-      }
     }
 
     // ── Toast + redirect ──
@@ -599,6 +556,26 @@ export default function NewEvaluationPage() {
                     ))}
                   </div>
                 )}
+
+                {/* Selector de skill */}
+                <div className="flex items-center gap-2 flex-wrap pl-2">
+                  <label className="text-xs text-gray-400 flex-shrink-0">Skill:</label>
+                  {(['grammar','vocabulary','reading','writing','listening'] as const).map(sk => (
+                    <button
+                      key={sk}
+                      type="button"
+                      onClick={() => updateQuestion(q.id, { skill: sk })}
+                      className="text-[11px] px-2 py-0.5 rounded-full border transition-all capitalize"
+                      style={
+                        (q.skill || 'grammar') === sk
+                          ? { backgroundColor: SKILL_COLOR[sk] ?? '#642f8d', color: '#fff', borderColor: 'transparent' }
+                          : { backgroundColor: '#f9fafb', color: '#6b7280', borderColor: '#e5e7eb' }
+                      }
+                    >
+                      {sk}
+                    </button>
+                  ))}
+                </div>
                 {(q.q_type === 'short_answer' || q.q_type === 'essay') && (
                   <p className="text-xs text-gray-400 pl-2 italic">
                     {q.q_type === 'short_answer' ? 'Respuesta corta — corrección manual' : 'Essay — corrección manual'}
@@ -668,6 +645,7 @@ export default function NewEvaluationPage() {
                       q_type:  q.q_type as QuestionType,
                       body:    q.body,
                       points:  q.points,
+                      skill:   (q as any).skill || 'grammar',
                       options: q.options.map(o => ({ id: genId(), body: o.body, is_correct: o.is_correct })),
                       expected_answer: q.explanation || undefined,
                     }))
@@ -696,6 +674,7 @@ export default function NewEvaluationPage() {
                       q_type:  bq.q_type as any,
                       body:    bq.body,
                       points:  1,
+                      skill:   bq.skill || 'grammar',
                       options: (bq.options ?? []).map((o: any) => ({
                         id:         genId(),
                         body:       o.body,

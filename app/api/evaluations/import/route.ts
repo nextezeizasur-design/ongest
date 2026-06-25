@@ -272,11 +272,7 @@ async function parseWithClaudeVision(
   }
 
   function sanitizeJson(str: string): string {
-    return str.replace(/("(?:[^"\\]|\\.)*")/g, (m) =>
-      m.replace(/
-/g, '\n').replace(/
-/g, '\r').replace(/	/g, '\t')
-    )
+    return str.replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t')
   }
 
   const direct = tryParse(clean)
@@ -372,10 +368,7 @@ async function parseWithClaude(text: string, cefrLevel: string | null): Promise<
   }
 
   function sanitizeJson(str: string): string {
-    // Reemplaza saltos de línea/tabs dentro de strings JSON que rompen el parser
-    return str.replace(/("(?:[^"\\]|\\.)*")/g, (m) =>
-      m.replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t')
-    )
+    return str.replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t')
   }
 
   const direct = tryParse(clean)

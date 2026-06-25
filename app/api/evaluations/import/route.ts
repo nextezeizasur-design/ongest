@@ -28,63 +28,57 @@ interface ParsedQuestion {
 
 // ─── Prompt para Claude ───────────────────────────────────────────────────────
 
-// ─── Pre-procesar texto para marcar bloques de Reading ───────────────────────
-// Detecta textos de lectura largos y los envuelve con marcadores para que
-// Claude no los confunda con ítems del examen.
+// ─── Extraer texto de Reading del PDF (lado servidor) ────────────────────────
+// Lo hace el servidor directamente — nunca le pedimos a Claude que lo incluya en el JSON.
 
-function preprocessText(text: string): string {
-  // Detectar patrones de texto de lectura:
-  // Líneas seguidas sin números que forman párrafos (más de 3 líneas consecutivas sin números al inicio)
+function extractReadingText(text: string): string | null {
+  // Busca el bloque entre "My Family" / título del texto y "Score:" o fin
+  // Estrategia: líneas con más de 60 chars consecutivas que no son ítems numerados
   const lines = text.split('\n')
-  const result: string[] = []
-  let inReadingText = false
-  let readingBuffer: string[] = []
-  let consecutiveNonItems = 0
+  const readingLines: string[] = []
+  let capturing = false
+  let consecutiveLong = 0
 
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim()
-    const isItem = /^\d+\s/.test(line) || /^[a-f]\s/.test(line) || /^Score:/.test(line) || /^(LISTENING|GRAMMAR|VOCABULARY|READING|WRITING|SPEAKING)$/.test(line)
-    const isBlank = line.length === 0
-    const isLongText = line.length > 60 && !isItem
+  for (const line of lines) {
+    const trimmed = line.trim()
+    const isItem    = /^\d+\s/.test(trimmed)
+    const isSection = /^(LISTENING|GRAMMAR|VOCABULARY|READING|WRITING|SPEAKING|Score:)/.test(trimmed)
+    const isLong    = trimmed.length > 55 && !isItem && !isSection
 
-    if (isLongText && !isItem) {
-      consecutiveNonItems++
-      readingBuffer.push(line)
-      if (consecutiveNonItems >= 2 && !inReadingText) {
-        inReadingText = true
-        // Marcar inicio del texto de lectura
-        if (readingBuffer.length > 0) {
-          result.push('<<<READING_TEXT_START>>>')
-          result.push(...readingBuffer)
-        }
-        readingBuffer = []
-      } else if (inReadingText) {
-        result.push(line)
-      }
+    if (isLong) {
+      consecutiveLong++
+      if (consecutiveLong >= 2) capturing = true
+      if (capturing) readingLines.push(trimmed)
     } else {
-      if (inReadingText && !isBlank) {
-        result.push('<<<READING_TEXT_END>>>')
-        inReadingText = false
-        consecutiveNonItems = 0
-        readingBuffer = []
-      } else if (readingBuffer.length > 0 && !inReadingText) {
-        result.push(...readingBuffer)
-        readingBuffer = []
-        consecutiveNonItems = 0
+      if (capturing && !trimmed) {
+        readingLines.push('')  // preservar párrafos
+      } else if (capturing && (isItem || isSection)) {
+        break  // fin del texto de lectura
+      } else if (!capturing) {
+        consecutiveLong = 0
       }
-      result.push(line)
     }
   }
 
-  if (inReadingText) result.push('<<<READING_TEXT_END>>>')
-  if (readingBuffer.length > 0) result.push(...readingBuffer)
-
-  return result.join('\n')
+  const result = readingLines.join('\n').trim()
+  return result.length > 50 ? result : null
 }
 
 function buildPrompt(text: string, cefrLevel: string | null): string {
-  const processedText = preprocessText(text)
-  return `Sos un experto en análisis de exámenes de inglés EFL/ESL. Analizá el texto completo del examen y extraé TODOS los ejercicios.
+  // Limpiar el texto del Reading del prompt para que Claude no lo incluya en el JSON
+  // El servidor lo inyecta después directamente
+  const cleanedText = text
+    .split('\n')
+    .filter(line => {
+      const t = line.trim()
+      // Remover líneas que son texto de lectura largo (no ítems)
+      const isItem    = /^\d+\s/.test(t) || /^[a-f]\s/.test(t)
+      const isSection = /^(LISTENING|GRAMMAR|VOCABULARY|READING|WRITING|SPEAKING|Score:|My Family|My name)/.test(t)
+      return t.length < 56 || isItem || isSection
+    })
+    .join('\n')
+
+  return `Sos un experto en análisis de exámenes de inglés EFL/ESL. Analizá el texto del examen y extraé TODOS los ejercicios.
 
 REGLAS GENERALES:
 - Ignorá: nombre del alumno, fecha, puntaje, logos, copyright, pie de página, el ítem de ejemplo (ítem 0).
@@ -92,75 +86,55 @@ REGLAS GENERALES:
 - Incluí TODOS los ítems numerados del 1 en adelante, de TODAS las secciones.
 - Respondé ÚNICAMENTE con un array JSON válido. Sin texto, sin markdown, sin bloques de código.
 - CRÍTICO: usa solo comillas dobles en el JSON. No uses saltos de línea dentro de los valores de los campos.
+- CRÍTICO: todos los strings deben escapar correctamente los apóstrofes con barra inversa.
 
 CÓMO IDENTIFICAR LA CONSIGNA DE CADA EJERCICIO:
-- La consigna es el texto que empieza con el número del ejercicio (ej: "1 Listen to...", "2 Match the...", "3 Select the...")
-- Cada consigna aplica a TODOS los ítems numerados que la siguen hasta que aparece otra consigna con número mayor.
-- Si los ítems 7-10 no tienen consigna propia, pertenecen al ejercicio cuya consigna es la más reciente antes de ellos.
-- Para ejercicios con "Complete the sentences with [lista de palabras]": incluí la lista de palabras en la consigna.
+- La consigna empieza con el número del ejercicio (ej: "1 Listen to...", "2 Match the...", "3 Select the...")
+- Cada consigna aplica a TODOS los ítems que la siguen hasta que aparece otra consigna con número mayor.
+- Para "Complete the sentences with [lista]": incluí la lista de palabras en la consigna.
+- El campo "instruction" debe tener la consigna completa. NO incluyas el texto de lectura — el sistema lo agrega automáticamente.
 
-ESTRUCTURA DE CADA PREGUNTA (todos los campos son obligatorios):
+ESTRUCTURA DE CADA PREGUNTA:
 {
   "body": "enunciado completo del ítem numerado (sin el número)",
   "q_type": "multiple_choice" | "true_false" | "short_answer" | "essay",
   "skill": "grammar" | "vocabulary" | "reading" | "writing" | "listening",
   "options": [{"body": "texto", "is_correct": false}],
-  "instruction": "consigna completa del ejercicio al que pertenece este ítem",
+  "instruction": "consigna completa del ejercicio",
   "points": 1,
   "needs_review": true
 }
 
-REGLAS POR TIPO DE EJERCICIO:
+REGLAS POR TIPO:
 
-TRUE/FALSE (ej: "It's hot where Dimitra is staying now."):
-- q_type: "true_false"
-- options: [{"body":"True","is_correct":false},{"body":"False","is_correct":false}]
-- needs_review: true
-- skill: según la sección (LISTENING → "listening", etc.)
+TRUE/FALSE: q_type="true_false", options=[{"body":"True","is_correct":false},{"body":"False","is_correct":false}], needs_review=true
 
-SELECT CORRECT WORD (ej: "This/These is a picture of my family."):
-- q_type: "multiple_choice"
-- options: una por cada palabra separada por "/", todas con is_correct:false
-- needs_review: true
+SELECT CORRECT WORD (ej: "This/These is a picture"):
+- q_type="multiple_choice", options: una por cada palabra separada por "/", todas is_correct:false, needs_review=true
 
-MATCH SENTENCE HALVES (columna izquierda con columna derecha):
-- body: solo la parte izquierda del ítem
-- q_type: "multiple_choice"
-- options: cada opción de la columna derecha (letras a,b,c...), todas con is_correct:false
-- needs_review: true
+MATCH SENTENCE HALVES:
+- body: solo la parte izquierda, q_type="multiple_choice"
+- options: cada opción de la columna derecha, todas is_correct:false, needs_review=true
 
-COMPLETE WITH WORD FROM LIST (fill in the blank):
-- q_type: "short_answer"
-- options: []
-- needs_review: true
-- instruction: debe incluir la lista de palabras disponibles
+COMPLETE WITH WORD FROM LIST:
+- q_type="short_answer", options:[], needs_review=true
+- instruction: incluir la lista de palabras disponibles
 
 REWRITE / TRANSFORM:
-- q_type: "essay"
-- options: []
-- needs_review: true
+- q_type="essay", options:[], needs_review=true
 
-READING COMPREHENSION (completar oraciones sobre un texto):
-- body: la oración incompleta
-- q_type: "short_answer"
-- options: []
-- needs_review: true
-- instruction: debe incluir el título del texto y la consigna original
-
-TEXTO DE READING — MUY IMPORTANTE:
-El texto de lectura estará marcado entre <<<READING_TEXT_START>>> y <<<READING_TEXT_END>>>.
-Para CADA ítem que pertenezca a ese ejercicio de Reading:
-- "body": solo la oración incompleta (ej: "Linda and her dad don't have the same colour ___.")
-- "instruction": debe incluir: 1) la consigna original completa, y 2) el texto COMPLETO de la lectura tal como aparece entre los marcadores. No lo recortes ni lo resumas bajo ningún concepto.
-- Ejemplo de instruction: "Read the text about Linda and her family. Complete the sentences (1-5).\n\nTEXTO: My name's Linda and I have three sisters. Two of them..."
-- Es CRÍTICO que el texto íntegro quede en instruction — el alumno lo necesita para responder.
+READING COMPREHENSION:
+- body: solo la oración incompleta (ej: "Linda and her dad don't have the same colour ___.")
+- q_type="short_answer", options:[], needs_review=true
+- instruction: solo la consigna (ej: "Read the text about Linda and her family. Complete the sentences (1-5).")
+- NO incluyas el texto de la lectura en la instruction — el sistema lo agrega automáticamente.
 
 Nivel CEFR: ${cefrLevel || 'A2'}
-difficulty_label: ${cefrLevel && ['A1','A2'].includes(cefrLevel) ? 'easy' : cefrLevel && ['B1','B2'].includes(cefrLevel) ? 'medium' : 'medium'}
+difficulty_label: ${cefrLevel && ['A1','A2'].includes(cefrLevel) ? 'easy' : 'medium'}
 difficulty_score: ${cefrLevel === 'A1' ? 20 : cefrLevel === 'A2' ? 35 : cefrLevel === 'B1' ? 50 : cefrLevel === 'B2' ? 65 : cefrLevel === 'C1' ? 80 : 35}
 
-TEXTO COMPLETO DEL EXAMEN:
-${processedText}
+TEXTO DEL EXAMEN:
+${cleanedText}
 
 Respondé ÚNICAMENTE con el array JSON. Sin texto previo ni posterior. Sin markdown.`
 }
@@ -361,6 +335,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         error: 'No se detectaron ejercicios en el PDF. Verificá que el archivo tenga texto seleccionable.',
       }, { status: 422 })
+    }
+
+    // ── Inyectar texto de Reading completo (servidor, no Claude) ──────────────
+    const readingText = extractReadingText(pdfText)
+    if (readingText) {
+      questions = questions.map(q => {
+        if (q.skill === 'reading' && q.instruction) {
+          return {
+            ...q,
+            instruction: `${q.instruction}\n\n${readingText}`,
+          }
+        }
+        return q
+      })
     }
 
     // Resumen por skill y tipo

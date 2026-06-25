@@ -26,8 +26,24 @@ export default async function EditEvaluationPage({
 
   if (!ev) redirect('/coordinator/evaluations')
 
-  // Solo se pueden editar borradores
-  if (ev.status !== 'draft') {
+  // Se puede editar si:
+  // 1. Es un borrador, O
+  // 2. Está publicada PERO aún no empezó (available_from en el futuro) Y no tiene intentos
+  const now = new Date()
+  const availFrom = ev.available_from ? new Date(ev.available_from) : null
+  const notStartedYet = availFrom ? availFrom > now : false
+
+  // Verificar si tiene intentos
+  const { count: attemptCount } = await sb
+    .from('attempts')
+    .select('id', { count: 'exact', head: true })
+    .eq('evaluation_id', id)
+    .in('status', ['submitted', 'graded', 'in_progress'])
+
+  const hasAttempts = (attemptCount ?? 0) > 0
+  const canEdit = ev.status === 'draft' || (ev.status === 'published' && notStartedYet && !hasAttempts)
+
+  if (!canEdit) {
     if (profile.role === 'director') redirect(`/director/evaluations/${id}`)
     redirect(`/coordinator/evaluations/${id}`)
   }

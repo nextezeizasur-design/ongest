@@ -59,10 +59,10 @@ const SKILL_EMOJI: Record<string, string> = {
   speaking:   '🗣️',
 }
 
-function statusLabel(status: string): { label: string; cls: string } {
+function statusLabel(status: string, score?: number | null): { label: string; cls: string } {
   const map: Record<string, { label: string; cls: string }> = {
     graded:    { label: 'Corregido',  cls: 'badge-green'  },
-    submitted: { label: 'Entregado',  cls: 'badge-blue'   },
+    submitted: score !== null && score !== undefined ? { label: 'Entregado', cls: 'badge-blue' } : { label: '⏳ Pendiente corrección', cls: 'badge-amber' },
     timed_out: { label: 'Tiempo',     cls: 'badge-amber'  },
     flagged:   { label: 'Revisión',   cls: 'badge-red'    },
   }
@@ -397,7 +397,7 @@ export default function ResultsDashboard({
           ) : (
             attempts.map((a: Attempt) => {
               const ev      = a.evaluations
-              const { label: stLabel, cls: stCls } = statusLabel(a.status)
+              const { label: stLabel, cls: stCls } = statusLabel(a.status, a.score)
               const isGraded = a.status === 'graded'
 
               return (
@@ -413,7 +413,11 @@ export default function ResultsDashboard({
                           (a.passed ?? false)  ? '#16a34a' : '#dc2626',
                       }}
                     >
-                      {isGraded && a.score !== null ? `${Math.round(a.score)}%` : '—'}
+                      {isGraded && a.score !== null
+                        ? `${Math.round(a.score)}%`
+                        : a.status === 'submitted' && a.score === null
+                        ? '⏳'
+                        : '—'}
                     </div>
 
                     {/* Info */}

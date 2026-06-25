@@ -175,8 +175,7 @@ export default function NewEvaluationPage() {
   // ── Convierte páginas del PDF a imágenes base64 (browser, para PDFs escaneados) ──
   async function pdfToImages(file: File): Promise<string[]> {
     const pdfjsLib = await import('pdfjs-dist')
-    // Usar fake worker para evitar problemas de CORS en Vercel
-    pdfjsLib.GlobalWorkerOptions.workerSrc = ''
+    pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs'
     const ab  = await file.arrayBuffer()
     const pdf = await pdfjsLib.getDocument({ data: ab }).promise
     const images: string[] = []
@@ -208,7 +207,7 @@ export default function NewEvaluationPage() {
       let hasText = false
       try {
         const pdfjsLib = await import('pdfjs-dist')
-        pdfjsLib.GlobalWorkerOptions.workerSrc = ''
+        pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs'
         const ab          = await importFile.arrayBuffer()
         const pdf         = await pdfjsLib.getDocument({ data: ab }).promise
         const page        = await pdf.getPage(1)

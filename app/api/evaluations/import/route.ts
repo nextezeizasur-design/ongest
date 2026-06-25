@@ -1,6 +1,6 @@
-// RUTA: app/api/evaluations/import/route.ts
-// Usa Claude API (claude-sonnet-4-6) para parsear ejercicios desde PDF de Macmillan u otras editoriales.
-// Costo estimado: ~$0.015 USD por PDF. 80 PDFs/mes ≈ $1.20 USD/mes.
+// app/api/evaluations/import/route.ts
+// Parser 100% local — cero costo
+// Soporta: columnas múltiples, ítems fragmentados, opciones de Match (col. derecha)
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient, type CookieOptions } from '@supabase/ssr'
@@ -8,14 +8,12 @@ import { cookies } from 'next/headers'
 import { rateLimit, getClientIp } from '@/lib/rate-limit'
 
 const ALLOWED_ROLES = [1, 2, 5]
-const RATE_LIMIT    = { windowMs: 10 * 60 * 1000, max: 10 }
-
-// ─── Tipos ────────────────────────────────────────────────────────────────────
+const RATE_LIMIT    = { windowMs: 10 * 60 * 1000, max: 5 }
 
 interface ParsedQuestion {
   body:             string
   q_type:           'multiple_choice' | 'true_false' | 'short_answer' | 'essay'
-  skill:            'grammar' | 'vocabulary' | 'reading' | 'writing' | 'listening'
+  skill:            string
   difficulty_label: 'easy' | 'medium' | 'hard'
   difficulty_score: number
   topic:            string | null
@@ -23,236 +21,327 @@ interface ParsedQuestion {
   options:          { body: string; is_correct: boolean }[]
   instruction?:     string
   points:           number
-  needs_review:     boolean   // true si el docente debe revisar/completar
 }
 
-// ─── Prompt para Claude ───────────────────────────────────────────────────────
+// ─── Patrones ─────────────────────────────────────────────────────────────────
 
-// ─── Extraer texto de Reading del PDF (lado servidor) ────────────────────────
-// Lo hace el servidor directamente — nunca le pedimos a Claude que lo incluya en el JSON.
+const SECTION_TITLE  = /^(GRAMMAR|VOCABULARY|READING|WRITING|LISTENING|SPEAKING)$/i
+const SECTION_LETTER = /^([A-F])\s{1,4}(Match|Put|Complete|Underline|Find|For each|Circle|Choose|Read|Write|Listen|Use|Fill|Select)/i
+const ITEM           = /^([1-9]\d?)\s{1,4}(\S.{1,})/
+const NUM_ONLY       = /^([1-9]\d?)$/
 
-function extractReadingText(text: string): string | null {
-  // Busca el bloque entre "My Family" / título del texto y "Score:" o fin
-  // Estrategia: líneas con más de 60 chars consecutivas que no son ítems numerados
-  const lines = text.split('\n')
-  const readingLines: string[] = []
-  let capturing = false
-  let consecutiveLong = 0
+// Línea de opción de columna derecha: "  b  texto", "    c  texto"
+// Excluye el doble-letra del ejemplo: "  a    a  texto"
+const COL_OPTION         = /^\s{1,6}([a-k])\s{1,6}([^\s].+)/
+const COL_OPTION_EXAMPLE = /^\s{1,6}[a-k]\s{2,6}[a-k]\s{1,6}/
+
+// Basura siempre
+const JUNK = /^(An example|Progress Test|Language Hub|Published by|Macmillan|Springer|©|Where are you from|I'm not from America|is an extra|been done|\s*\/\s*\d+|\s*\/\s*$|[a-k]\s*$|\d{3,}[\d\s,]+$)/i
+
+// Texto de respuesta de Match que aparece suelto (continuación de col. derecha)
+const MATCH_CONTINUATION = /^(New Zealand|this year|in Spain|in my bag|hundred and|sixty-five|from Japan|Thailand|New York|this city|a mobile phone|umbrella|the table|Turkish friends|I'm not)/i
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function detectSkill(text: string): string {
+  const t = text.toLowerCase()
+  if (/put the words|find the error|correct order|underline|match the sentence|sentence halves/.test(t)) return 'grammar'
+  if (/vocabulary|complete the|person from|definitions|match the definition|match the numbers/.test(t)) return 'vocabulary'
+  if (/read|passage|comprehension|according to/.test(t)) return 'reading'
+  if (/write|essay|describe/.test(t)) return 'writing'
+  if (/listen|audio|recording/.test(t)) return 'listening'
+  return 'grammar'
+}
+
+function detectExType(instruction: string): string {
+  const s = instruction.toLowerCase()
+  if (/put the words|correct order/.test(s))      return 'order'
+  if (/find the error|for each sentence/.test(s)) return 'error'
+  if (/underline|circle the correct/.test(s))     return 'underline'
+  if (/match/.test(s))                            return 'match'
+  if (/complete|fill in/.test(s))                 return 'complete'
+  if (/write|describe|how will/.test(s))          return 'write'
+  return 'generic'
+}
+
+function detectDifficulty(cefrLevel: string | null): { label: 'easy'|'medium'|'hard'; score: number } {
+  if (['A1','A2'].includes(cefrLevel ?? '')) return { label: 'easy',   score: 25 }
+  if (['B1','B2'].includes(cefrLevel ?? '')) return { label: 'medium', score: 55 }
+  if (['C1','C2'].includes(cefrLevel ?? '')) return { label: 'hard',   score: 80 }
+  return { label: 'medium', score: 50 }
+}
+
+// ─── PASO 1: Pre-fusión ───────────────────────────────────────────────────────
+// Fusiona ítems fragmentados: "1\ntexto" → "1  texto"
+// Preserva las líneas de opciones de columna derecha con un prefijo especial
+
+function prefuse(lines: string[]): string[] {
+  const out: string[] = []
+  let i = 0
+
+  while (i < lines.length) {
+    const raw  = lines[i]
+    const line = raw.trim()
+    i++
+
+    if (!line) continue
+    if (JUNK.test(line)) continue
+
+    // Opción de ejemplo "  a    a  texto" — ignorar
+    if (COL_OPTION_EXAMPLE.test(raw)) continue
+
+    // Opción de columna derecha "  b  texto" → preservar como "__OPT__b|texto"
+    const optM = COL_OPTION.exec(raw)
+    if (optM) {
+      out.push(`__OPT__${optM[1]}|${optM[2].trim()}`)
+      continue
+    }
+
+    // Continuaciones de opciones (texto sin número ni sección, corto)
+    // "New Zealand.", "this year." — marcar como continuación de la última opción
+    if (MATCH_CONTINUATION.test(line)) {
+      out.push(`__OPT_CONT__|${line}`)
+      continue
+    }
+
+    // Número solo (1-99) → fusionar con siguiente línea útil
+    const numM = NUM_ONLY.exec(line)
+    if (numM) {
+      const num = parseInt(numM[1])
+      while (i < lines.length) {
+        const nxtRaw = lines[i]
+        const nxt    = nxtRaw.trim()
+        i++
+        if (!nxt || JUNK.test(nxt)) continue
+        if (COL_OPTION_EXAMPLE.test(nxtRaw)) continue
+        if (SECTION_TITLE.test(nxt) || SECTION_LETTER.test(nxt)) { i--; break }
+        out.push(`${num}  ${nxt}`)
+        break
+      }
+      continue
+    }
+
+    out.push(line)
+  }
+
+  // Post-proceso: fusionar continuaciones con la opción anterior
+  const merged: string[] = []
+  for (const l of out) {
+    if (l.startsWith('__OPT_CONT__|') && merged.length > 0) {
+      const cont = l.replace('__OPT_CONT__|', '')
+      const last = merged[merged.length - 1]
+      if (last.startsWith('__OPT__')) {
+        merged[merged.length - 1] = last + ' ' + cont
+        continue
+      }
+    }
+    merged.push(l)
+  }
+
+  return merged
+}
+
+// ─── PASO 2: Parser con acumulación por sección ───────────────────────────────
+
+function parseSections(lines: string[], cefrLevel: string | null): ParsedQuestion[] {
+  const diff = detectDifficulty(cefrLevel)
+
+  interface SectionData {
+    instruction:  string
+    exType:       string
+    skill:        string
+    items:        string[]
+    matchOptions: Map<string, string>  // letra → texto completo
+    insertOrder:  number
+  }
+
+  const sections = new Map<string, SectionData>()
+  let nextOrder  = 0
+  let curSkill   = ''
+  let curLetter  = ''
+  let curInstr   = ''
+  let curExType  = 'generic'
+
+  function ensureSection() {
+    const key = `${curSkill}::${curLetter}`
+    if (!sections.has(key)) {
+      sections.set(key, {
+        instruction:  curInstr,
+        exType:       curExType,
+        skill:        detectSkill(curInstr),
+        items:        [],
+        matchOptions: new Map(),
+        insertOrder:  nextOrder++,
+      })
+    }
+    return sections.get(key)!
+  }
+
+  let i = 0
+  while (i < lines.length) {
+    const line = lines[i].trim()
+    i++
+    if (!line) continue
+
+    // Opción de columna derecha capturada en prefuse
+    if (line.startsWith('__OPT__')) {
+      const [, rest]   = line.split('__OPT__')
+      const [letter, ...parts] = rest.split('|')
+      const text = parts.join('|').trim()
+      if (letter && text) {
+        ensureSection().matchOptions.set(letter, text)
+      }
+      continue
+    }
+
+    // Sección principal
+    if (SECTION_TITLE.test(line)) {
+      curSkill = line.toUpperCase().trim(); curLetter = ''; curInstr = ''; curExType = 'generic'
+      continue
+    }
+
+    // Sub-sección
+    const sm = SECTION_LETTER.exec(line)
+    if (sm) {
+      curLetter = sm[1].toUpperCase()
+      let instr = line.slice(line.indexOf(sm[2])).trim()
+      // Instrucción multi-línea
+      while (i < lines.length && /\bThere$/.test(instr)) {
+        const nxt = lines[i].trim()
+        if (!nxt || SECTION_TITLE.test(nxt) || SECTION_LETTER.test(nxt) || ITEM.test(nxt)) break
+        if (/^(is an extra|been done)/i.test(nxt)) { i++; continue }
+        instr += ' ' + nxt; i++
+      }
+      instr     = instr.replace(/\s+0\s+\S.*$/, '').trim()
+      curInstr  = instr.slice(0, 220)
+      curExType = detectExType(curInstr)
+      ensureSection()
+      continue
+    }
+
+    // Ítem numerado
+    const im = ITEM.exec(line)
+    if (im) {
+      const num = parseInt(im[1])
+      if (num === 0) continue
+      let body = im[2].trim()
+      body = body.replace(/\s{3,}[a-k]\s+\S.*$/, '').trim()
+      body = body.replace(/\s+0\s+\w.+$/, '').trim()
+      ensureSection().items.push(body)
+      continue
+    }
+
+    // Continuación de ítem
+    const key = `${curSkill}::${curLetter}`
+    const sec = sections.get(key)
+    if (sec && sec.items.length > 0 && line.length > 3 && line.length < 100 &&
+        !SECTION_TITLE.test(line) && !SECTION_LETTER.test(line) &&
+        !/^[a-k]\s/.test(line) && !MATCH_CONTINUATION.test(line) &&
+        !line.startsWith('__OPT')) {
+      sec.items[sec.items.length - 1] += ' ' + line
+    }
+  }
+
+  // ── Convertir secciones → preguntas ──────────────────────────────────────
+  const questions: ParsedQuestion[] = []
+  const ordered = [...sections.entries()].sort((a, b) => a[1].insertOrder - b[1].insertOrder)
+
+  for (const [, sec] of ordered) {
+    // Construir array de opciones de Match ordenadas por letra
+    const matchOpts = [...sec.matchOptions.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([letter, text]) => ({
+        body:       `${letter}) ${text}`,
+        is_correct: false,   // docente marca la correcta en la revisión
+      }))
+
+    for (const item of sec.items) {
+      const body = item.trim()
+      if (body.length < 4) continue
+
+      let q_type: ParsedQuestion['q_type'] = 'short_answer'
+      let options: { body: string; is_correct: boolean }[] = []
+
+      if (sec.exType === 'match' && matchOpts.length > 0) {
+        // Match: multiple_choice con las opciones de la columna derecha
+        q_type  = 'multiple_choice'
+        options = matchOpts.map(o => ({ ...o }))  // copia para cada pregunta
+      } else if (sec.exType === 'underline') {
+        // Underline: detectar X/Y inline
+        const xy = [...body.matchAll(/\b([A-Za-z][a-z'\- ]{0,20}?)\s*\/\s*([A-Za-z][a-z'\- ]{0,20}?)\b/g)]
+        if (xy.length > 0) {
+          q_type  = 'multiple_choice'
+          options = [
+            { body: xy[0][1].trim(), is_correct: true  },
+            { body: xy[0][2].trim(), is_correct: false },
+          ]
+        }
+      } else if (sec.exType === 'write') {
+        q_type = 'essay'
+      }
+
+      questions.push({
+        body,
+        q_type,
+        skill:            sec.skill,
+        difficulty_label: diff.label,
+        difficulty_score: diff.score,
+        topic:            sec.skill || null,
+        explanation:      null,
+        options,
+        instruction:      sec.instruction || undefined,
+        points:           q_type === 'essay' ? 5 : 1,
+      })
+    }
+  }
+
+  // Deduplicar
+  const seen = new Set<string>()
+  return questions.filter(q => {
+    const key = q.body.slice(0, 70).toLowerCase().trim()
+    if (seen.has(key) || q.body.trim().length < 4) return false
+    seen.add(key); return true
+  })
+}
+
+// ─── Fallback lineal ──────────────────────────────────────────────────────────
+
+function parseFallback(text: string, cefrLevel: string | null): ParsedQuestion[] {
+  const diff  = detectDifficulty(cefrLevel)
+  const lines = text.split('\n').map(l => l.replace(/\s+/g, ' ').trim()).filter(Boolean)
+  const qs: ParsedQuestion[] = []
+  const Q_RE   = /^\d{1,2}[\.\)]\s+(.{6,})/
+  const OPT_RE = /^([a-dA-D])[\.\)\-]\s+(.+)/
+
+  let cQ:   string | null = null
+  let cOpts: { body: string; is_correct: boolean }[] = []
+
+  function push() {
+    if (!cQ || cQ.trim().length < 8) return
+    const q_type: ParsedQuestion['q_type'] = cOpts.length >= 2 ? 'multiple_choice' : 'short_answer'
+    qs.push({ body: cQ.trim(), q_type, skill: detectSkill(cQ),
+      difficulty_label: diff.label, difficulty_score: diff.score,
+      topic: null, explanation: null, options: cOpts, points: 1 })
+    cQ = null; cOpts = []
+  }
 
   for (const line of lines) {
-    const trimmed = line.trim()
-    const isItem    = /^\d+\s/.test(trimmed)
-    const isSection = /^(LISTENING|GRAMMAR|VOCABULARY|READING|WRITING|SPEAKING|Score:)/.test(trimmed)
-    const isLong    = trimmed.length > 55 && !isItem && !isSection
-
-    if (isLong) {
-      consecutiveLong++
-      if (consecutiveLong >= 2) capturing = true
-      if (capturing) readingLines.push(trimmed)
-    } else {
-      if (capturing && !trimmed) {
-        readingLines.push('')  // preservar párrafos
-      } else if (capturing && (isItem || isSection)) {
-        break  // fin del texto de lectura
-      } else if (!capturing) {
-        consecutiveLong = 0
-      }
-    }
+    const qm = Q_RE.exec(line); if (qm) { push(); cQ = qm[1].trim(); continue }
+    const om = OPT_RE.exec(line); if (om && cQ) { cOpts.push({ body: om[2].trim(), is_correct: cOpts.length === 0 }); continue }
+    if (cQ) cQ += ' ' + line
   }
-
-  const result = readingLines.join('\n').trim()
-  return result.length > 50 ? result : null
+  push()
+  return qs
 }
 
-function buildPrompt(text: string, cefrLevel: string | null): string {
-  // Limpiar el texto del Reading del prompt para que Claude no lo incluya en el JSON
-  // El servidor lo inyecta después directamente
-  const cleanedText = text
-    .split('\n')
-    .filter(line => {
-      const t = line.trim()
-      // Remover líneas que son texto de lectura largo (no ítems)
-      const isItem    = /^\d+\s/.test(t) || /^[a-f]\s/.test(t)
-      const isSection = /^(LISTENING|GRAMMAR|VOCABULARY|READING|WRITING|SPEAKING|Score:|My Family|My name)/.test(t)
-      return t.length < 56 || isItem || isSection
-    })
-    .join('\n')
+// ─── Extractor principal ──────────────────────────────────────────────────────
 
-  return `Sos un experto en análisis de exámenes de inglés EFL/ESL. Analizá el texto del examen y extraé TODOS los ejercicios.
-
-REGLAS GENERALES:
-- Ignorá: nombre del alumno, fecha, puntaje, logos, copyright, pie de página, el ítem de ejemplo (ítem 0).
-- Procesá TODAS las secciones: LISTENING, GRAMMAR, VOCABULARY, READING, WRITING, SPEAKING.
-- Incluí TODOS los ítems numerados del 1 en adelante, de TODAS las secciones.
-- Respondé ÚNICAMENTE con un array JSON válido. Sin texto, sin markdown, sin bloques de código.
-- CRÍTICO: usa solo comillas dobles en el JSON. No uses saltos de línea dentro de los valores de los campos.
-- CRÍTICO: todos los strings deben escapar correctamente los apóstrofes con barra inversa.
-
-CÓMO IDENTIFICAR LA CONSIGNA DE CADA EJERCICIO:
-- La consigna empieza con el número del ejercicio (ej: "1 Listen to...", "2 Match the...", "3 Select the...")
-- Cada consigna aplica a TODOS los ítems que la siguen hasta que aparece otra consigna con número mayor.
-- Para "Complete the sentences with [lista]": incluí la lista de palabras en la consigna.
-- El campo "instruction" debe tener la consigna completa. NO incluyas el texto de lectura — el sistema lo agrega automáticamente.
-
-ESTRUCTURA DE CADA PREGUNTA:
-{
-  "body": "enunciado completo del ítem numerado (sin el número)",
-  "q_type": "multiple_choice" | "true_false" | "short_answer" | "essay",
-  "skill": "grammar" | "vocabulary" | "reading" | "writing" | "listening",
-  "options": [{"body": "texto", "is_correct": false}],
-  "instruction": "consigna completa del ejercicio",
-  "points": 1,
-  "needs_review": true
-}
-
-REGLAS POR TIPO:
-
-TRUE/FALSE: q_type="true_false", options=[{"body":"True","is_correct":false},{"body":"False","is_correct":false}], needs_review=true
-
-SELECT CORRECT WORD (ej: "This/These is a picture"):
-- q_type="multiple_choice", options: una por cada palabra separada por "/", todas is_correct:false, needs_review=true
-
-MATCH SENTENCE HALVES:
-- body: solo la parte izquierda, q_type="multiple_choice"
-- options: cada opción de la columna derecha, todas is_correct:false, needs_review=true
-
-COMPLETE WITH WORD FROM LIST:
-- q_type="short_answer", options:[], needs_review=true
-- instruction: incluir la lista de palabras disponibles
-
-REWRITE / TRANSFORM:
-- q_type="essay", options:[], needs_review=true
-
-READING COMPREHENSION:
-- body: solo la oración incompleta (ej: "Linda and her dad don't have the same colour ___.")
-- q_type="short_answer", options:[], needs_review=true
-- instruction: solo la consigna (ej: "Read the text about Linda and her family. Complete the sentences (1-5).")
-- NO incluyas el texto de la lectura en la instruction — el sistema lo agrega automáticamente.
-
-Nivel CEFR: ${cefrLevel || 'A2'}
-difficulty_label: ${cefrLevel && ['A1','A2'].includes(cefrLevel) ? 'easy' : 'medium'}
-difficulty_score: ${cefrLevel === 'A1' ? 20 : cefrLevel === 'A2' ? 35 : cefrLevel === 'B1' ? 50 : cefrLevel === 'B2' ? 65 : cefrLevel === 'C1' ? 80 : 35}
-
-TEXTO DEL EXAMEN:
-${cleanedText}
-
-Respondé ÚNICAMENTE con el array JSON. Sin texto previo ni posterior. Sin markdown.`
-}
-
-// ─── Extraer texto del PDF (pdf-parse) ───────────────────────────────────────
-
-async function extractPdfText(file: File): Promise<string> {
-  const pdfParse = (await import('pdf-parse')).default
-  const buffer   = Buffer.from(await file.arrayBuffer())
-  const data     = await pdfParse(buffer)
-  return data.text ?? ''
-}
-
-// ─── Llamar a Claude API ──────────────────────────────────────────────────────
-
-async function parseWithClaude(text: string, cefrLevel: string | null): Promise<ParsedQuestion[]> {
-  const apiKey = process.env.ANTHROPIC_API_KEY
-  if (!apiKey) throw new Error('ANTHROPIC_API_KEY no configurada en variables de entorno.')
-
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type':      'application/json',
-      'x-api-key':         apiKey,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify({
-      model:      'claude-sonnet-4-6',
-      max_tokens: 8192,
-      messages: [
-        {
-          role:    'user',
-          content: buildPrompt(text, cefrLevel),
-        },
-      ],
-    }),
-  })
-
-  if (!res.ok) {
-    const errBody = await res.text()
-    throw new Error(`Claude API error ${res.status}: ${errBody}`)
-  }
-
-  const data     = await res.json()
-  const content  = data.content?.[0]?.text ?? ''
-
-  // Limpiar posibles bloques markdown que Claude pueda incluir
-  const clean = content
-    .replace(/```json\s*/gi, '')
-    .replace(/```\s*/gi, '')
-    .trim()
-
-  let parsed: any[]
-
-  function tryParse(str: string): any[] | null {
-    try { return JSON.parse(str) } catch { return null }
-  }
-
-  function sanitizeJson(str: string): string {
-    // Reemplaza saltos de línea/tabs dentro de strings JSON que rompen el parser
-    return str.replace(/("(?:[^"\\]|\\.)*")/g, (m) =>
-      m.replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t')
-    )
-  }
-
-  const direct = tryParse(clean)
-  if (direct && Array.isArray(direct)) {
-    parsed = direct
-  } else {
-    const match = clean.match(/\[[\s\S]*\]/)
-    if (!match) throw new Error('Claude no devolvió JSON válido. Intentá de nuevo.')
-
-    const sanitized = sanitizeJson(match[0])
-    const fromSanitized = tryParse(sanitized)
-
-    if (fromSanitized && Array.isArray(fromSanitized)) {
-      parsed = fromSanitized
-    } else {
-      // Último recurso: extraer objetos individuales
-      const objMatches = match[0].match(/\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}/g)
-      if (!objMatches || objMatches.length === 0) {
-        throw new Error('No se pudo parsear la respuesta. Intentá de nuevo.')
-      }
-      parsed = objMatches.flatMap((obj: string) => {
-        const r = tryParse(obj) ?? tryParse(sanitizeJson(obj))
-        return r ? [r] : []
-      })
-      if (parsed.length === 0) {
-        throw new Error('No se pudieron extraer preguntas del PDF.')
-      }
-    }
-  }
-
-  if (!Array.isArray(parsed)) throw new Error('La respuesta de Claude no es un array.')
-
-  // Normalizar y validar cada pregunta
-  return parsed
-    .filter((q: any) => q.body && q.body.trim().length > 3)
-    .map((q: any, i: number) => ({
-      body:             String(q.body ?? '').trim(),
-      q_type:           ['multiple_choice','true_false','short_answer','essay'].includes(q.q_type)
-                          ? q.q_type
-                          : 'short_answer',
-      skill:            ['grammar','vocabulary','reading','writing','listening'].includes(q.skill)
-                          ? q.skill
-                          : 'grammar',
-      difficulty_label: q.difficulty_label ?? 'medium',
-      difficulty_score: q.difficulty_score ?? 50,
-      topic:            q.skill ?? null,
-      explanation:      null,
-      options:          Array.isArray(q.options) ? q.options.map((o: any) => ({
-                          body:       String(o.body ?? '').trim(),
-                          is_correct: Boolean(o.is_correct),
-                        })) : [],
-      instruction:      q.instruction ? String(q.instruction).slice(0, 300) : undefined,
-      points:           q.q_type === 'essay' ? 5 : 1,
-      needs_review:     q.needs_review !== false,  // default true
-    }))
+function extractQuestions(text: string, cefrLevel: string | null): ParsedQuestion[] {
+  const lines  = text.split('\n')
+  const fused  = prefuse(lines)
+  const result = parseSections(fused, cefrLevel)
+  if (result.length >= 2) return result
+  return parseFallback(text, cefrLevel)
 }
 
 // ─── Route handler ────────────────────────────────────────────────────────────
@@ -268,7 +357,6 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Auth
     const cookieStore = await cookies()
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -291,97 +379,57 @@ export async function POST(request: NextRequest) {
     if (!profile || !ALLOWED_ROLES.includes(profile.role_id))
       return NextResponse.json({ error: 'Sin permisos.' }, { status: 403 })
 
-    // Validar archivo
     const formData  = await request.formData()
     const file      = formData.get('file') as File | null
     const cefrLevel = formData.get('cefr_level') as string | null
     const publisher = formData.get('publisher') as string | null
 
-    if (!file)
-      return NextResponse.json({ error: 'No se recibió ningún archivo.' }, { status: 400 })
-    if (file.type !== 'application/pdf')
-      return NextResponse.json({ error: 'El archivo debe ser un PDF.' }, { status: 400 })
-    if (file.size > 10 * 1024 * 1024)
-      return NextResponse.json({ error: 'El archivo supera el límite de 10MB.' }, { status: 400 })
+    if (!file) return NextResponse.json({ error: 'No se recibió ningún archivo.' }, { status: 400 })
+    if (file.type !== 'application/pdf') return NextResponse.json({ error: 'El archivo debe ser un PDF.' }, { status: 400 })
+    if (file.size > 10 * 1024 * 1024) return NextResponse.json({ error: 'Máximo 10MB.' }, { status: 400 })
 
-    // Extraer texto del PDF
-    let pdfText: string
-    try {
-      pdfText = await extractPdfText(file)
-    } catch (err: any) {
-      if (err.message?.includes('Cannot find module')) {
-        return NextResponse.json({ error: 'Ejecutá: npm install pdf-parse' }, { status: 503 })
-      }
-      return NextResponse.json({ error: 'Error al leer el PDF: ' + err.message }, { status: 422 })
-    }
+    const pdfParse = (await import('pdf-parse')).default
+    const pdfData  = await pdfParse(Buffer.from(await file.arrayBuffer()))
 
-    if (!pdfText || pdfText.trim().length < 30) {
+    if (!pdfData.text || pdfData.text.trim().length < 30) {
       return NextResponse.json({
         error: 'No se pudo extraer texto del PDF. Verificá que no sea una imagen escaneada.',
       }, { status: 422 })
     }
 
-    // Parsear con Claude
-    let questions: ParsedQuestion[]
-    try {
-      questions = await parseWithClaude(pdfText, cefrLevel || null)
-    } catch (err: any) {
-      return NextResponse.json({
-        error: 'Error al analizar el PDF con IA: ' + err.message,
-      }, { status: 500 })
-    }
+    const questions = extractQuestions(pdfData.text, cefrLevel || null)
 
     if (questions.length === 0) {
       return NextResponse.json({
-        error: 'No se detectaron ejercicios en el PDF. Verificá que el archivo tenga texto seleccionable.',
+        error: 'No se detectaron preguntas. El PDF debe tener texto seleccionable y ejercicios con secciones A/B/C o ítems numerados.',
       }, { status: 422 })
     }
 
-    // ── Inyectar texto de Reading completo (servidor, no Claude) ──────────────
-    const readingText = extractReadingText(pdfText)
-    if (readingText) {
-      questions = questions.map(q => {
-        if (q.skill === 'reading' && q.instruction) {
-          return {
-            ...q,
-            instruction: `${q.instruction}\n\n${readingText}`,
-          }
-        }
-        return q
-      })
-    }
-
-    // Resumen por skill y tipo
     const skillSummary = questions.reduce<Record<string, number>>((acc, q) => {
       acc[q.skill] = (acc[q.skill] ?? 0) + 1; return acc
     }, {})
-
     const typeSummary = questions.reduce<Record<string, number>>((acc, q) => {
       acc[q.q_type] = (acc[q.q_type] ?? 0) + 1; return acc
     }, {})
 
-    const needsReviewCount = questions.filter(q => q.needs_review).length
-
     return NextResponse.json({
-      success:           true,
-      questions:         questions.map(q => ({
+      success:       true,
+      questions:     questions.map(q => ({
         ...q,
         organization_id:  profile.organization_id,
         created_by:       user.id,
         cefr_level:       cefrLevel || null,
         source_publisher: publisher || null,
       })),
-      count:             questions.length,
-      skill_summary:     skillSummary,
-      type_summary:      typeSummary,
-      needs_review_count: needsReviewCount,
-      note:              needsReviewCount > 0
-        ? `${needsReviewCount} pregunta${needsReviewCount !== 1 ? 's' : ''} requieren que marques la respuesta correcta antes de publicar.`
-        : 'Todas las preguntas fueron detectadas correctamente.',
+      count:         questions.length,
+      skill_summary: skillSummary,
+      type_summary:  typeSummary,
+      note:          'Para ejercicios Match: marcá cuál es la opción correcta para cada ítem. Para Underline: la primera opción está marcada por defecto.',
     })
 
   } catch (err: any) {
-    console.error('[/api/evaluations/import] Error:', err)
-    return NextResponse.json({ error: err.message ?? 'Error interno.' }, { status: 500 })
+    if (err.message?.includes('Cannot find module'))
+      return NextResponse.json({ error: 'Ejecutá: npm install pdf-parse' }, { status: 503 })
+    return NextResponse.json({ error: err.message ?? 'Error procesando el PDF.' }, { status: 500 })
   }
 }

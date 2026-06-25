@@ -110,8 +110,10 @@ function ExamPage({ params }: { params: Promise<{ id: string }> }) {
   const [showWarn, setShowWarn]     = useState(false)
   const [warnMsg, setWarnMsg]       = useState('')
   const [loading, setLoading]       = useState(true)
-  const [submitting, setSubmitting] = useState(false)
-  const [userId, setUserId]         = useState<string>('')
+  const [submitting, setSubmitting]         = useState(false)
+  const [userId, setUserId]                 = useState<string>('')
+  const [showPendingModal, setShowPendingModal] = useState(false)
+  const [hasPendingReview, setHasPendingReview] = useState(false)
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -369,10 +371,20 @@ function ExamPage({ params }: { params: Promise<{ id: string }> }) {
         })
         .eq('id', att.id)
 
-      // Auto-calificar
-      const { data: gradeData } = await supabase.rpc('auto_grade_attempt', {
-        p_attempt_id: att.id,
-      })
+      // Detectar preguntas manuales ANTES de auto-calificar
+      const manualQTypes = ['short_answer', 'essay', 'speaking']
+      const hasManualQs = exam?.questions?.some((q: any) => manualQTypes.includes(q.q_type)) ?? false
+
+      // Auto-calificar: si hay preguntas manuales, solo calificar las objetivas
+      // y NO guardar score final (queda null hasta que el docente corrija)
+      if (!hasManualQs) {
+        // Solo auto-calificar si todas las preguntas son objetivas
+        await supabase.rpc('auto_grade_attempt', { p_attempt_id: att.id })
+      } else {
+        // Solo marcar las respuestas objetivas como correctas/incorrectas
+        // sin calcular ni guardar score — el docente completa la corrección
+        await supabase.rpc('auto_grade_attempt_partial', { p_attempt_id: att.id })
+      }
 
       // Generar recomendaciones automáticas (fire & forget)
       fetch('/api/recommendations/generate', {
@@ -381,10 +393,12 @@ function ExamPage({ params }: { params: Promise<{ id: string }> }) {
         body:    JSON.stringify({ attempt_id: att.id }),
       }).catch(() => {})
 
-      // Emitir certificado solo si NO hay preguntas de speaking (que requieren corrección manual)
-      // Si hay speaking, el certificado se emite cuando el docente finaliza la corrección
-      const hasSpeaking = exam?.questions?.some((q: any) => q.q_type === 'speaking') ?? false
-      if (!hasSpeaking) {
+      // Detectar si hay preguntas de corrección manual
+      const manualTypes = ['short_answer', 'essay', 'speaking']
+      const needsManualReview = exam?.questions?.some((q: any) => manualTypes.includes(q.q_type)) ?? false
+
+      // Emitir certificado solo si NO hay preguntas de corrección manual
+      if (!needsManualReview) {
         fetch('/api/certificates/issue', {
           method:  'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -392,7 +406,15 @@ function ExamPage({ params }: { params: Promise<{ id: string }> }) {
         }).catch(() => {})
       }
 
-      router.push('/results')
+      if (needsManualReview) {
+        // Mostrar modal informativo — el docente debe completar la corrección
+        setHasPendingReview(true)
+        setShowPendingModal(true)
+        setSubmitting(false)
+      } else {
+        // Auto-corrección completa → ir directo a resultados
+        router.push('/results')
+      }
 
     } catch (err) {
       console.error('Error al entregar examen:', err)
@@ -880,6 +902,39 @@ function ExamPage({ params }: { params: Promise<{ id: string }> }) {
         </main>
       </div>
       {ConfirmDialogNode}
+
+      {/* ── Modal: examen entregado con corrección pendiente ── */}
+      {showPendingModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.6)' }}>
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8 text-center">
+            <div className="w-16 h-16 rounded-full flex items-center justify-center text-3xl mx-auto mb-5"
+              style={{ backgroundColor: '#f5eefb' }}>
+              📋
+            </div>
+            <h2 className="text-xl font-bold text-gray-900 mb-3">¡Examen entregado!</h2>
+            <p className="text-gray-600 mb-4 leading-relaxed">
+              Tu examen fue enviado correctamente.
+            </p>
+            <div className="rounded-xl border border-purple-200 bg-purple-50 px-4 py-4 mb-6 text-left space-y-2">
+              <p className="text-sm font-semibold text-purple-800">⏳ Corrección en proceso</p>
+              <p className="text-sm text-purple-700">
+                Este examen tiene preguntas que requieren corrección manual por parte de tu docente.
+                Tu nota final estará disponible una vez que el docente complete la revisión.
+              </p>
+              <p className="text-sm text-purple-700">
+                Recibirás una notificación 🔔 cuando tu nota esté lista.
+              </p>
+            </div>
+            <button
+              onClick={() => router.push('/exam')}
+              className="w-full py-3 text-white font-semibold rounded-xl hover:opacity-90 transition-opacity"
+              style={{ backgroundColor: '#642f8d' }}
+            >
+              Volver a mis exámenes
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

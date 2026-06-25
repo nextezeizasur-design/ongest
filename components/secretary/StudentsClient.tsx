@@ -44,8 +44,12 @@ export default function StudentsClient({ orgId }: { orgId: string }) {
   const [editing,  setEditing]   = useState<Student | null>(null)
   const [saving,   setSaving]    = useState(false)
   const [toast,    setToast]     = useState<{type:'ok'|'err'; msg:string}|null>(null)
-  const [invited,  setInvited]   = useState<boolean>(false)
-  const [form,     setForm]      = useState({ first_name:'', last_name:'', email:'', phone:'', birth_date:'', course_id:'' })
+  const [invited,      setInvited]      = useState<boolean>(false)
+  const [tempPassword, setTempPassword] = useState<string>('')
+  const [createdEmail, setCreatedEmail] = useState<string>('')
+  const [createdName,  setCreatedName]  = useState<string>('')
+  const [copied,       setCopied]       = useState(false)
+  const [form,         setForm]         = useState({ first_name:'', last_name:'', email:'', phone:'', birth_date:'', course_id:'' })
 
   const sb = createClient() as any
 
@@ -70,6 +74,10 @@ export default function StudentsClient({ orgId }: { orgId: string }) {
   function openNew() {
     setForm({ first_name:'', last_name:'', email:'', phone:'', birth_date:'', course_id:'' })
     setInvited(false)
+    setTempPassword('')
+    setCreatedEmail('')
+    setCreatedName('')
+    setCopied(false)
     setModal('new')
   }
 
@@ -96,6 +104,9 @@ export default function StudentsClient({ orgId }: { orgId: string }) {
     const data = await res.json()
     setSaving(false)
     if (!res.ok) { showToast('err', data.error ?? 'Error al crear el alumno.'); return }
+    setTempPassword(data.temp_password ?? '')
+    setCreatedEmail(data.email ?? form.email)
+    setCreatedName(data.full_name ?? `${form.first_name} ${form.last_name}`)
     setInvited(true)
     await load()
   }
@@ -201,14 +212,59 @@ export default function StudentsClient({ orgId }: { orgId: string }) {
             </div>
 
             {invited ? (
-              <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-4 space-y-2">
-                <p className="text-sm font-semibold text-green-800">✓ Alumno creado correctamente</p>
-                <p className="text-xs text-green-700">Email: <strong>{form.email}</strong></p>
-                <p className="text-xs text-green-700">
-                  <span className="text-green-700">✓ Email de bienvenida enviado</span>
-                </p>
-                <p className="text-xs text-green-600 mt-1">El alumno recibirá un link para elegir su propia contraseña. No necesitás compartir ninguna credencial.</p>
-                <button onClick={closeModal} className="btn-brand mt-2 text-xs py-1.5">Cerrar</button>
+              <div className="space-y-4">
+                <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-4 space-y-3">
+                  <p className="text-sm font-semibold text-green-800">✓ Alumno creado correctamente</p>
+                  <div className="space-y-1">
+                    <p className="text-xs text-gray-500">Email</p>
+                    <p className="text-sm font-medium text-gray-900">{createdEmail}</p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-xs text-gray-500">Contraseña temporal</p>
+                    <div className="flex items-center gap-2">
+                      <code className="flex-1 rounded-lg bg-white border border-gray-200 px-3 py-2 text-sm font-mono font-semibold text-gray-900 tracking-wider">
+                        {tempPassword}
+                      </code>
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(tempPassword)
+                          setCopied(true)
+                          setTimeout(() => setCopied(false), 2000)
+                        }}
+                        className="btn-outline text-xs px-3 py-2 flex-shrink-0"
+                      >
+                        {copied ? '✓ Copiada' : 'Copiar'}
+                      </button>
+                    </div>
+                  </div>
+                  <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                    ⚠️ Guardá esta contraseña — solo se muestra una vez.
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <a
+                    href={`https://wa.me/?text=${encodeURIComponent(
+                      `Hola ${createdName}! 👋 Te creamos tu cuenta en OnGest (Next English).
+
+` +
+                      `🌐 Plataforma: https://ongest.vercel.app/login?org=next-english
+` +
+                      `📧 Email: ${createdEmail}
+` +
+                      `🔑 Contraseña temporal: ${tempPassword}
+
+` +
+                      `Te recomendamos cambiar tu contraseña desde "Mi Perfil" una vez que ingreses. ¡Bienvenido/a! 🎉`
+                    )}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="btn-outline flex-1 text-center text-sm flex items-center justify-center gap-2"
+                    style={{ borderColor: '#25d366', color: '#25d366' }}
+                  >
+                    💬 Enviar por WhatsApp
+                  </a>
+                  <button onClick={closeModal} className="btn-brand flex-1 text-sm">Cerrar</button>
+                </div>
               </div>
             ) : (
               <div className="space-y-4">
@@ -223,12 +279,17 @@ export default function StudentsClient({ orgId }: { orgId: string }) {
                   </div>
                 </div>
 
-                {modal==='new' && (
-                  <div>
-                    <label className="label">Email *</label>
-                    <input type="email" value={form.email} onChange={e => setForm(p=>({...p, email:e.target.value}))} placeholder="juan@email.com" className="input" />
-                  </div>
-                )}
+                <div>
+                  <label className="label">Email *</label>
+                  <input type="email" value={form.email}
+                    onChange={e => setForm(p=>({...p, email:e.target.value}))}
+                    placeholder="juan@email.com" className="input"
+                    disabled={modal === 'edit'}
+                  />
+                  {modal === 'edit' && (
+                    <p className="text-xs text-gray-400 mt-1">El email no puede modificarse desde aquí.</p>
+                  )}
+                </div>
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>

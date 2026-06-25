@@ -172,26 +172,8 @@ export default function NewEvaluationPage() {
     })
   }
 
-  // ── Convierte páginas del PDF a imágenes base64 (browser, para PDFs escaneados) ──
-  async function pdfToImages(file: File): Promise<string[]> {
-    const pdfjsLib = await import('pdfjs-dist')
-    pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs'
-    const ab  = await file.arrayBuffer()
-    const pdf = await pdfjsLib.getDocument({ data: ab }).promise
-    const images: string[] = []
-    for (let i = 1; i <= Math.min(pdf.numPages, 4); i++) {
-      const page     = await pdf.getPage(i)
-      const viewport = page.getViewport({ scale: 2.0 })
-      const canvas   = document.createElement('canvas')
-      canvas.width   = viewport.width
-      canvas.height  = viewport.height
-      await page.render({ canvasContext: canvas.getContext('2d')!, viewport }).promise
-      images.push(canvas.toDataURL('image/jpeg', 0.85).split(',')[1])
-    }
-    return images
-  }
-
   // ── Importador: procesar PDF ──
+  // El servidor detecta automáticamente si el PDF tiene texto o es escaneado
   async function handleImportPdf() {
     if (!importFile) { setImportError('Seleccioná un archivo PDF.'); return }
     setImportLoading(true)
@@ -203,34 +185,6 @@ export default function NewEvaluationPage() {
     form.append('publisher',  importPublisher)
 
     try {
-      // Detectar si el PDF tiene texto o es escaneado
-      let hasText = false
-      try {
-        const pdfjsLib = await import('pdfjs-dist')
-        pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs'
-        const ab          = await importFile.arrayBuffer()
-        const pdf         = await pdfjsLib.getDocument({ data: ab }).promise
-        const page        = await pdf.getPage(1)
-        const textContent = await page.getTextContent()
-        hasText = textContent.items.length > 10
-      } catch { hasText = false }
-
-      if (!hasText) {
-        // PDF escaneado → convertir a imágenes para Claude Vision
-        try {
-          const images = await pdfToImages(importFile)
-          if (images.length === 0) {
-            setImportError('No se pudo procesar el PDF escaneado.')
-            return
-          }
-          form.append('images',  JSON.stringify(images))
-          form.append('scanned', 'true')
-        } catch (e: any) {
-          setImportError('Error al convertir el PDF a imagen: ' + e.message)
-          return
-        }
-      }
-
       const res  = await fetch('/api/evaluations/import', { method: 'POST', body: form })
       const data = await res.json()
       if (!res.ok) { setImportError(data.error ?? 'Error procesando el PDF.'); return }

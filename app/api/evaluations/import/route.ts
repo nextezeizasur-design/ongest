@@ -165,6 +165,158 @@ ${processedText}
 Respondé ÚNICAMENTE con el array JSON. Sin texto previo ni posterior. Sin markdown.`
 }
 
+// ─── Prompt para Claude Vision (PDF escaneado) ───────────────────────────────
+
+function buildVisionPrompt(cefrLevel: string | null): string {
+  return `Sos un experto en análisis de exámenes de inglés EFL/ESL. Analizá las imágenes del examen y extraé TODOS los ejercicios.
+
+REGLAS GENERALES:
+- Ignorá: nombre del alumno, fecha, puntaje, logos, copyright, pie de página, el ítem de ejemplo (ítem 0).
+- Procesá TODAS las secciones: LISTENING, GRAMMAR, VOCABULARY, READING, WRITING, SPEAKING.
+- También procesá secciones con letras: A, B, C, D (son sub-secciones de Grammar, Vocabulary, etc.)
+- Incluí TODOS los ítems numerados del 1 en adelante, de TODAS las secciones.
+- Respondé ÚNICAMENTE con un array JSON válido. Sin texto, sin markdown, sin bloques de código.
+- CRÍTICO: usa solo comillas dobles en el JSON. No uses saltos de línea dentro de los valores de los campos.
+
+CÓMO IDENTIFICAR LA CONSIGNA:
+- La consigna es el texto en negrita antes de los ítems (ej: "Match the sentence halves...", "Put the words into the correct order...")
+- Cada consigna aplica a TODOS los ítems que la siguen hasta que aparece otra consigna.
+- Incluí la consigna COMPLETA en el campo "instruction" de cada ítem.
+
+ESTRUCTURA DE CADA PREGUNTA:
+{
+  "body": "enunciado completo del ítem (sin el número)",
+  "q_type": "multiple_choice" | "true_false" | "short_answer" | "essay",
+  "skill": "grammar" | "vocabulary" | "reading" | "writing" | "listening",
+  "options": [{"body": "texto", "is_correct": false}],
+  "instruction": "consigna completa del ejercicio",
+  "points": 1,
+  "needs_review": true
+}
+
+REGLAS POR TIPO:
+
+MATCH (unir mitades): q_type="multiple_choice", options=cada opción de columna derecha (a,b,c...), todas is_correct:false, needs_review:true
+
+PUT IN ORDER (palabras desordenadas): q_type="short_answer", body=las palabras separadas por /, options:[], needs_review:true
+
+UNDERLINE/CHOOSE (word1/word2 en itálica): q_type="multiple_choice", options=[{body:"word1",is_correct:false},{body:"word2",is_correct:false}], needs_review:true
+
+FIND THE ERROR: q_type="essay", body=la oración con error, options:[], needs_review:true
+
+COMPLETE THE SENTENCES: q_type="short_answer", options:[], needs_review:true
+
+REWRITE: q_type="essay", options:[], needs_review:true
+
+READING COMPREHENSION: q_type="short_answer", options:[], needs_review:true, instruction=consigna+título del texto
+
+TRUE/FALSE: q_type="true_false", options=[{body:"True",is_correct:false},{body:"False",is_correct:false}], needs_review:true
+
+Nivel CEFR: ${cefrLevel || 'A2'}
+difficulty_label: ${cefrLevel && ['A1','A2'].includes(cefrLevel) ? 'easy' : 'medium'}
+difficulty_score: ${cefrLevel === 'A1' ? 20 : cefrLevel === 'A2' ? 35 : cefrLevel === 'B1' ? 50 : cefrLevel === 'B2' ? 65 : 35}
+
+Respondé ÚNICAMENTE con el array JSON. Sin texto previo ni posterior. Sin markdown.`
+}
+
+// ─── Claude Vision para PDFs escaneados ──────────────────────────────────────
+
+async function parseWithClaudeVision(
+  images: string[],
+  cefrLevel: string | null
+): Promise<ParsedQuestion[]> {
+  const apiKey = process.env.ANTHROPIC_API_KEY
+  if (!apiKey) throw new Error('ANTHROPIC_API_KEY no configurada.')
+
+  // Construir el contenido con las imágenes
+  const imageContent = images.map(b64 => ({
+    type:   'image',
+    source: { type: 'base64', media_type: 'image/jpeg', data: b64 },
+  }))
+
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type':      'application/json',
+      'x-api-key':         apiKey,
+      'anthropic-version': '2023-06-01',
+    },
+    body: JSON.stringify({
+      model:      'claude-sonnet-4-6',
+      max_tokens: 8192,
+      messages: [{
+        role:    'user',
+        content: [
+          ...imageContent,
+          { type: 'text', text: buildVisionPrompt(cefrLevel) },
+        ],
+      }],
+    }),
+  })
+
+  if (!res.ok) {
+    const errBody = await res.text()
+    throw new Error(`Claude Vision API error ${res.status}: ${errBody}`)
+  }
+
+  const data    = await res.json()
+  const content = data.content?.[0]?.text ?? ''
+
+  const clean = content
+    .replace(/```json\s*/gi, '')
+    .replace(/```\s*/gi, '')
+    .trim()
+
+  function tryParse(str: string): any[] | null {
+    try { return JSON.parse(str) } catch { return null }
+  }
+
+  function sanitizeJson(str: string): string {
+    return str.replace(/("(?:[^"\\]|\\.)*")/g, (m) =>
+      m.replace(/
+/g, '\n').replace(/
+/g, '\r').replace(/	/g, '\t')
+    )
+  }
+
+  const direct = tryParse(clean)
+  let parsed: any[] = direct && Array.isArray(direct) ? direct : []
+
+  if (parsed.length === 0) {
+    const match = clean.match(/\[[\s\S]*\]/)
+    if (match) {
+      const sanitized = sanitizeJson(match[0])
+      const fromSanitized = tryParse(sanitized)
+      if (fromSanitized && Array.isArray(fromSanitized)) {
+        parsed = fromSanitized
+      }
+    }
+  }
+
+  if (parsed.length === 0) throw new Error('Claude Vision no devolvió preguntas válidas.')
+
+  return parsed
+    .filter((q: any) => q.body && q.body.trim().length > 3)
+    .map((q: any) => ({
+      body:             String(q.body ?? '').trim(),
+      q_type:           ['multiple_choice','true_false','short_answer','essay'].includes(q.q_type)
+                          ? q.q_type : 'short_answer',
+      skill:            ['grammar','vocabulary','reading','writing','listening'].includes(q.skill)
+                          ? q.skill : 'grammar',
+      difficulty_label: q.difficulty_label ?? 'medium',
+      difficulty_score: q.difficulty_score ?? 50,
+      topic:            q.skill ?? null,
+      explanation:      null,
+      options:          Array.isArray(q.options) ? q.options.map((o: any) => ({
+                          body:       String(o.body ?? '').trim(),
+                          is_correct: Boolean(o.is_correct),
+                        })) : [],
+      instruction:      q.instruction ? String(q.instruction).slice(0, 400) : undefined,
+      points:           q.q_type === 'essay' ? 5 : 1,
+      needs_review:     q.needs_review !== false,
+    }))
+}
+
 // ─── Extraer texto del PDF (pdf-parse) ───────────────────────────────────────
 
 async function extractPdfText(file: File): Promise<string> {
@@ -347,10 +499,23 @@ export async function POST(request: NextRequest) {
       }, { status: 422 })
     }
 
-    // Parsear con Claude
+    // Parsear con Claude — texto o Vision según el tipo de PDF
     let questions: ParsedQuestion[]
+    const isScanned = formData.get('scanned') === 'true'
+    const imagesRaw = formData.get('images') as string | null
+
     try {
-      questions = await parseWithClaude(pdfText, cefrLevel || null)
+      if (isScanned && imagesRaw) {
+        // PDF escaneado → Claude Vision
+        const images: string[] = JSON.parse(imagesRaw)
+        if (!images || images.length === 0) {
+          return NextResponse.json({ error: 'No se recibieron imágenes del PDF escaneado.' }, { status: 400 })
+        }
+        questions = await parseWithClaudeVision(images, cefrLevel || null)
+      } else {
+        // PDF con texto → flujo normal
+        questions = await parseWithClaude(pdfText, cefrLevel || null)
+      }
     } catch (err: any) {
       return NextResponse.json({
         error: 'Error al analizar el PDF con IA: ' + err.message,

@@ -1,97 +1,102 @@
 'use client'
 // components/shared/CertificateDownload.tsx
-// Issue 6: Botón de descarga de certificados para alumnos
+// Genera y descarga el certificado del alumno usando certificate-generator (browser)
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 
 interface Props {
   attemptId:  string
   studentId:  string
   evalTitle:  string
+  orgName?:   string
 }
 
-export default function CertificateDownload({ attemptId, studentId, evalTitle }: Props) {
-  const supabase = createClient()
+export default function CertificateDownload({
+  attemptId,
+  studentId,
+  evalTitle,
+  orgName = 'Next English Institute',
+}: Props) {
+  const supabase  = createClient()
   const [loading, setLoading] = useState(false)
-  const [certUrl, setCertUrl] = useState<string | null>(null)
   const [error,   setError]   = useState<string | null>(null)
+  const [cert,    setCert]    = useState<any | null>(null)
 
-  async function fetchCertificate() {
+  // Cargar certificado existente al montar
+  useEffect(() => {
+    async function load() {
+      const { data } = await (supabase as any)
+        .from('certificates')
+        .select('*')
+        .eq('attempt_id', attemptId)
+        .eq('student_id', studentId)
+        .eq('is_active', true)
+        .order('issued_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (data) setCert(data)
+    }
+    load()
+  }, [attemptId, studentId])
+
+  async function handleDownload() {
     setLoading(true)
     setError(null)
 
     try {
-      const sb = supabase as any
+      let certData = cert
 
-      // Buscar certificado en DB
-      const { data: cert } = await sb
-        .from('certificates')
-        .select('id, file_path, issued_at')
-        .eq('attempt_id', attemptId)
-        .eq('student_id', studentId)
-        .maybeSingle()
-
-      if (!cert?.file_path) {
-        // Solicitar emisión si no existe
-        const res = await fetch('/api/certificates/issue', {
+      // Si no hay certificado en DB, emitirlo primero
+      if (!certData) {
+        const res  = await fetch('/api/certificates/issue', {
           method:  'POST',
           headers: { 'Content-Type': 'application/json' },
           body:    JSON.stringify({ attempt_id: attemptId }),
         })
         const data = await res.json()
-        if (data.file_path) {
-          await downloadFromStorage(data.file_path)
-        } else {
-          setError('No se pudo generar el certificado. Intentá más tarde.')
+        if (!res.ok) {
+          setError(data.error ?? 'No se pudo emitir el certificado.')
+          return
         }
-        return
+
+        // Buscar el certificado recién creado
+        const { data: newCert } = await (supabase as any)
+          .from('certificates')
+          .select('*')
+          .eq('attempt_id', attemptId)
+          .eq('student_id', studentId)
+          .order('issued_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+
+        if (!newCert) {
+          setError('No se pudo obtener el certificado. Intentá más tarde.')
+          return
+        }
+        certData = newCert
+        setCert(newCert)
       }
 
-      await downloadFromStorage(cert.file_path)
-    } catch (err) {
-      setError('Error al obtener el certificado.')
+      // Generar PDF en el browser con los datos del certificado
+      const { generateCertificate } = await import('@/lib/certificate-generator')
+      await generateCertificate({
+        studentName: certData.student_name,
+        evalTitle:   certData.eval_title,
+        score:       certData.score,
+        passed:      certData.passed,
+        cefrLevel:   certData.cefr_level ?? null,
+        issuedBy:    certData.issued_by ?? orgName,
+        orgName,
+        verifyHash:  certData.verify_hash,
+        issuedAt:    certData.issued_at,
+      })
+    } catch (err: any) {
+      console.error('Error generando certificado:', err)
+      setError('Error al generar el certificado. Intentá más tarde.')
     } finally {
       setLoading(false)
     }
-  }
-
-  async function downloadFromStorage(filePath: string) {
-    const sb = supabase as any
-
-    // Generar URL firmada (válida por 60 segundos)
-    const { data: signed, error: signErr } = await sb
-      .storage
-      .from('certificates')
-      .createSignedUrl(filePath, 60)
-
-    if (signErr || !signed?.signedUrl) {
-      // Si no hay bucket de storage, usar URL pública directa
-      const { data: publicData } = sb
-        .storage
-        .from('certificates')
-        .getPublicUrl(filePath)
-
-      if (publicData?.publicUrl) {
-        triggerDownload(publicData.publicUrl)
-      } else {
-        setError('No se pudo generar el enlace de descarga.')
-      }
-      return
-    }
-
-    setCertUrl(signed.signedUrl)
-    triggerDownload(signed.signedUrl)
-  }
-
-  function triggerDownload(url: string) {
-    const a = document.createElement('a')
-    a.href     = url
-    a.download = `certificado-${evalTitle.replace(/\s+/g, '-').toLowerCase()}.pdf`
-    a.target   = '_blank'
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
   }
 
   return (
@@ -106,38 +111,22 @@ export default function CertificateDownload({ attemptId, studentId, evalTitle }:
             <p className="text-xs text-gray-400">{evalTitle}</p>
           </div>
         </div>
-
-        <div className="flex gap-2 flex-shrink-0">
-          {certUrl && (
-            <a
-              href={certUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-xs px-3 py-2 border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50"
-            >
-              Ver →
-            </a>
+        <button
+          onClick={handleDownload}
+          disabled={loading}
+          className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white rounded-lg disabled:opacity-60 hover:opacity-90 transition-opacity flex-shrink-0"
+          style={{ backgroundColor: '#642f8d' }}
+        >
+          {loading ? (
+            <>
+              <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              Generando…
+            </>
+          ) : (
+            '⬇ Descargar'
           )}
-          <button
-            onClick={fetchCertificate}
-            disabled={loading}
-            className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white rounded-lg disabled:opacity-60 hover:opacity-90 transition-opacity"
-            style={{ backgroundColor: '#642f8d' }}
-          >
-            {loading ? (
-              <>
-                <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                Generando…
-              </>
-            ) : (
-              <>
-                ⬇ Descargar
-              </>
-            )}
-          </button>
-        </div>
+        </button>
       </div>
-
       {error && (
         <p className="mt-3 text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>
       )}

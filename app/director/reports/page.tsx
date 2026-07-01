@@ -2,6 +2,7 @@ import { requireRole } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import TopBar from '@/components/layout/TopBar'
 import { formatScore, scoreColor, CEFR_LEVELS } from '@/lib/utils'
+import InstitutionalReportButton from '@/components/director/InstitutionalReportButton'
 import type { StudentStats } from '@/types'
 
 export const metadata = { title: 'Reportes' }
@@ -37,7 +38,11 @@ export default async function DirectorReports() {
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
-      <TopBar title="Reportes" subtitle="Análisis académico del ciclo" />
+      <TopBar
+        title="Reportes"
+        subtitle="Análisis académico del ciclo"
+        actions={<InstitutionalReportButton organizationId={profile.organization_id} />}
+      />
 
       <main className="flex-1 overflow-y-auto p-6 space-y-6">
 

@@ -40,6 +40,7 @@ const NAV: Record<RoleName, NavItem[]> = {
     { href: '/coordinator/results',       label: 'Correcciones',       icon: I.check },
     { href: '/coordinator/courses',       label: 'Cursos',             icon: I.book  },
     { href: '/coordinator/teachers',      label: 'Comparativa docentes', icon: '📊'  },
+    { href: '/coordinator/calendar',      label: 'Calendario',         icon: '🗓️'  },
     { href: '/coordinator/question-bank', label: 'Banco de preguntas', icon: I.book  },
   ],
   secretary: [

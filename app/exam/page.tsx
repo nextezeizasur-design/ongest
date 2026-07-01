@@ -5,7 +5,7 @@ import Sidebar from '@/components/layout/Sidebar'
 import MobileNav from '@/components/layout/MobileNav'
 import TopBar from '@/components/layout/TopBar'
 import EmptyState from '@/components/ui/EmptyState'
-import { formatDate, daysUntil, EVAL_TYPE_LABEL } from '@/lib/utils'
+import { formatDate, daysUntil, EVAL_TYPE_LABEL, getEvalStatus } from '@/lib/utils'
 import type { Attempt } from '@/types'
 
 export const metadata = { title: 'Mis exámenes' }
@@ -77,6 +77,23 @@ export default async function ExamListPage() {
     return true
   })
 
+  // ── Recordatorio visual: próximo examen relevante ──
+  // Prioridad 1: examen activo con fecha límite más próxima (requiere acción)
+  // Prioridad 2: examen aún no habilitado más próximo a abrir (aviso anticipado)
+  const activeWithDeadline = pendingEvaluations
+    .filter((ev: any) => getEvalStatus(ev) === 'active' && ev.available_until)
+    .sort((a: any, b: any) => new Date(a.available_until).getTime() - new Date(b.available_until).getTime())
+
+  const upcomingLocked = pendingEvaluations
+    .filter((ev: any) => getEvalStatus(ev) === 'upcoming')
+    .sort((a: any, b: any) => new Date(a.available_from).getTime() - new Date(b.available_from).getTime())
+
+  const reminderEval  = activeWithDeadline[0] ?? upcomingLocked[0] ?? null
+  const reminderIsLock = !activeWithDeadline[0] && !!upcomingLocked[0]
+  const reminderDays   = reminderEval
+    ? daysUntil(reminderIsLock ? reminderEval.available_from : reminderEval.available_until)
+    : null
+
   return (
     <div className="flex h-screen overflow-hidden bg-gray-50">
 
@@ -91,6 +108,47 @@ export default async function ExamListPage() {
         />
 
         <main className="flex-1 overflow-y-auto p-4 md:p-6 pb-20 md:pb-6 space-y-4">
+
+          {/* Recordatorio visual: próximo examen */}
+          {reminderEval && reminderDays !== null && (
+            <div
+              className={`card flex items-center gap-3 md:gap-4 border-l-4 ${
+                reminderIsLock
+                  ? 'border-l-purple-400 bg-purple-50/40'
+                  : reminderDays <= 0
+                    ? 'border-l-red-500 bg-red-50/60'
+                    : reminderDays <= 2
+                      ? 'border-l-red-400 bg-red-50/40'
+                      : reminderDays <= 5
+                        ? 'border-l-amber-400 bg-amber-50/40'
+                        : 'border-l-gray-300'
+              }`}
+            >
+              <div className="flex h-10 w-10 md:h-12 md:w-12 flex-shrink-0 items-center justify-center rounded-xl text-xl">
+                {reminderIsLock ? '🔓' : reminderDays <= 0 ? '⏰' : reminderDays <= 2 ? '⚠️' : '📅'}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-gray-900">
+                  {reminderIsLock
+                    ? `Tu próximo examen se habilita ${reminderDays === 0 ? 'hoy' : `en ${reminderDays} día${reminderDays !== 1 ? 's' : ''}`}`
+                    : reminderDays <= 0
+                      ? 'Tu próximo examen vence hoy'
+                      : `Tu próximo examen vence en ${reminderDays} día${reminderDays !== 1 ? 's' : ''}`
+                  }
+                </p>
+                <p className="text-xs text-gray-500 truncate">{reminderEval.title}</p>
+              </div>
+              {!reminderIsLock && (
+                <a
+                  href={reminderEval.is_adaptive ? `/exam/adaptive/${reminderEval.id}` : `/exam/${reminderEval.id}`}
+                  className="hidden sm:inline-flex items-center justify-center px-4 py-2 text-sm font-semibold text-white rounded-xl hover:opacity-90 transition-opacity flex-shrink-0"
+                  style={{ backgroundColor: '#642f8d' }}
+                >
+                  Ir al examen →
+                </a>
+              )}
+            </div>
+          )}
 
           {/* Curso asignado */}
           {studentCourse && (
@@ -165,12 +223,13 @@ export default async function ExamListPage() {
                 const attempts   = byEval[ev.id] ?? []
                 const inProgress = attempts.find(a => a.status === 'in_progress')
                 const isExpired  = ev.available_until && new Date(ev.available_until) < now
+                const isLocked   = getEvalStatus(ev) === 'upcoming'
                 const days       = daysUntil(ev.available_until)
 
                 return (
                   <div
                     key={ev.id}
-                    className={`card transition-shadow hover:shadow-sm ${isExpired ? 'opacity-60' : ''}`}
+                    className={`card transition-shadow hover:shadow-sm ${isExpired || isLocked ? 'opacity-70' : ''}`}
                   >
                     <div className="flex items-start gap-3 md:items-center md:gap-4">
 
@@ -202,17 +261,24 @@ export default async function ExamListPage() {
                         {/* Métricas */}
                         <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-gray-400">
                           {ev.time_limit_min && <span>⏱ {ev.time_limit_min} min</span>}
-                          {!isExpired && days !== null && (
+                          {isLocked && (
+                            <span className="font-medium text-purple-600">
+                              🔒 Se habilita {formatDate(ev.available_from)}
+                            </span>
+                          )}
+                          {!isLocked && !isExpired && days !== null && (
                             <span className={days <= 2 ? 'font-semibold text-red-600' : ''}>
                               {days === 0 ? '⚠ Vence hoy' : `Vence en ${days}d`}
                             </span>
                           )}
-                          {isExpired && <span>Cerrado · {formatDate(ev.available_until)}</span>}
+                          {!isLocked && isExpired && <span>Cerrado · {formatDate(ev.available_until)}</span>}
                         </div>
 
                         {/* Botón mobile */}
                         <div className="mt-3 md:hidden">
-                          {isExpired ? (
+                          {isLocked ? (
+                            <span className="badge badge-gray">🔒 Aún no disponible</span>
+                          ) : isExpired ? (
                             <span className="badge badge-gray">Cerrado</span>
                           ) : (
                             <a
@@ -228,7 +294,9 @@ export default async function ExamListPage() {
 
                       {/* Botón desktop */}
                       <div className="hidden md:block flex-shrink-0">
-                        {isExpired ? (
+                        {isLocked ? (
+                          <span className="badge badge-gray">🔒 Aún no disponible</span>
+                        ) : isExpired ? (
                           <span className="badge badge-gray">Cerrado</span>
                         ) : (
                           <a

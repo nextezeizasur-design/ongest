@@ -29,6 +29,7 @@ const NAV: Record<RoleName, NavItem[]> = {
     { href: '/director/courses',       label: 'Cursos',             icon: I.book  },
     { href: '/director/evaluations',   label: 'Evaluaciones',       icon: I.doc   },
     { href: '/director/reports',       label: 'Reportes',           icon: I.chart },
+    { href: '/director/monthly',       label: 'Dashboard Ejecutivo', icon: '📈'   },
     { href: '/director/users',         label: 'Usuarios',           icon: I.user  },
     { href: '/director/question-bank', label: 'Banco de preguntas', icon: I.book  },
     { href: '/director/analytics',     label: 'Analytics',          icon: I.chart },

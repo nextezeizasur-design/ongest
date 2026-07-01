@@ -24,6 +24,8 @@ interface Student {
   total_attempts: number
   passed_count:   number
   avg_score?:     number | null
+  first_login_at?: string | null
+  last_seen_at?:   string | null
 }
 
 interface Course {
@@ -40,6 +42,26 @@ function calcAge(birth_date?: string): number | null {
   const m = today.getMonth() - dob.getMonth()
   if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) age--
   return age
+}
+
+function formatDate(iso?: string | null): string {
+  if (!iso) return '—'
+  return new Date(iso).toLocaleDateString('es-AR', {
+    day:   '2-digit',
+    month: '2-digit',
+    year:  'numeric',
+  })
+}
+
+function formatDateTime(iso?: string | null): string {
+  if (!iso) return '—'
+  return new Date(iso).toLocaleDateString('es-AR', {
+    day:    '2-digit',
+    month:  '2-digit',
+    year:   'numeric',
+    hour:   '2-digit',
+    minute: '2-digit',
+  })
 }
 
 type FilterStatus = 'all' | 'risk' | 'pending'
@@ -160,6 +182,9 @@ export default function DirectorStudentsClient({ orgId }: { orgId: string }) {
   const atRisk  = students.filter(s => (s.avg_score ?? 100) < 60 && s.total_attempts > 0).length
   const pending = students.filter(s => s.total_attempts === 0).length
 
+  // Stats de acceso
+  const nuncaIngresaron = students.filter(s => !s.first_login_at).length
+
   return (
     <div className="space-y-5">
 
@@ -173,11 +198,12 @@ export default function DirectorStudentsClient({ orgId }: { orgId: string }) {
       )}
 
       {/* Stats cards */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-4 gap-4">
         {[
-          { label: 'Total',      value: students.length, active: statusFilter === 'all',     onClick: () => setStatusFilter('all') },
-          { label: 'En riesgo',  value: atRisk,          active: statusFilter === 'risk',    onClick: () => setStatusFilter('risk'),    color: 'text-red-600' },
-          { label: 'Sin rendir', value: pending,         active: statusFilter === 'pending', onClick: () => setStatusFilter('pending'), color: 'text-amber-600' },
+          { label: 'Total',           value: students.length,  active: statusFilter === 'all',     onClick: () => setStatusFilter('all') },
+          { label: 'En riesgo',       value: atRisk,           active: statusFilter === 'risk',    onClick: () => setStatusFilter('risk'),    color: 'text-red-600' },
+          { label: 'Sin rendir',      value: pending,          active: statusFilter === 'pending', onClick: () => setStatusFilter('pending'), color: 'text-amber-600' },
+          { label: 'Nunca ingresaron', value: nuncaIngresaron, active: false,                      onClick: () => {},                         color: 'text-gray-400' },
         ].map(s => (
           <button
             key={s.label}
@@ -230,6 +256,8 @@ export default function DirectorStudentsClient({ orgId }: { orgId: string }) {
                 <th>Exámenes</th>
                 <th>Aprobados</th>
                 <th>Promedio</th>
+                <th>Primer acceso</th>
+                <th>Último acceso</th>
                 <th>Estado</th>
                 <th>Acciones</th>
               </tr>
@@ -241,6 +269,8 @@ export default function DirectorStudentsClient({ orgId }: { orgId: string }) {
                   : (s.avg_score ?? 100) < 60
                   ? { label: 'En riesgo',  cls: 'badge-red' }
                   : { label: 'Al día',     cls: 'badge-green' }
+
+                const nuncaIngreso = !s.first_login_at
 
                 return (
                   <tr key={s.id} className={!s.is_active ? 'opacity-50' : ''}>
@@ -274,6 +304,18 @@ export default function DirectorStudentsClient({ orgId }: { orgId: string }) {
                             style={{ width: `${s.avg_score ?? 0}%` }} />
                         </div>
                       </div>
+                    </td>
+                    <td>
+                      {nuncaIngreso
+                        ? <span className="text-xs text-amber-600 font-medium">Nunca ingresó</span>
+                        : <span className="text-xs text-gray-500">{formatDate(s.first_login_at)}</span>
+                      }
+                    </td>
+                    <td>
+                      {nuncaIngreso
+                        ? <span className="text-gray-300 text-xs">—</span>
+                        : <span className="text-xs text-gray-500">{formatDateTime(s.last_seen_at)}</span>
+                      }
                     </td>
                     <td><span className={`badge ${st.cls}`}>{st.label}</span></td>
                     <td>
@@ -350,11 +392,13 @@ export default function DirectorStudentsClient({ orgId }: { orgId: string }) {
                 <div className="flex gap-2">
                   <a
                     href={`https://wa.me/?text=${encodeURIComponent(
-                      `Hola ${createdName}! 👋 Te creamos tu cuenta en OnGest (Next English).\n\n` +
-                      `🌐 Plataforma: https://ongest.vercel.app/login?org=next-english\n` +
-                      `📧 Email: ${createdEmail}\n` +
+                      `Hola ${createdName}! 👋 Te enviamos tus datos de acceso a OnGest, la plataforma de evaluaciones de Next Ezeiza.\n\n` +
+                      `🔗 Acceso: https://ongest.vercel.app/login?org=next-english\n` +
+                      `📧 Usuario: ${createdEmail}\n` +
                       `🔑 Contraseña temporal: ${tempPassword}\n\n` +
-                      `Te recomendamos cambiar tu contraseña desde "Mi Perfil" una vez que ingreses. ¡Bienvenido/a! 🎉`
+                      `Al ingresar por primera vez, te recomendamos cambiar tu contraseña desde tu perfil.\n\n` +
+                      `Ante cualquier consulta, escribinos por este medio.\n\n` +
+                      `Next Ezeiza — Equipo Académico`
                     )}`}
                     target="_blank"
                     rel="noopener noreferrer"
@@ -383,7 +427,6 @@ export default function DirectorStudentsClient({ orgId }: { orgId: string }) {
                   </div>
                 </div>
 
-                {/* Email: visible en ambos modos, editable solo en nuevo */}
                 <div>
                   <label className="label">Email *</label>
                   <input

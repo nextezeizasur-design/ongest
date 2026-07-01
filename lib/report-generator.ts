@@ -330,3 +330,239 @@ export async function generateStudentReport(data: StudentReportData): Promise<vo
   const filename = `reporte_${data.student.last_name}_${data.student.first_name}_${new Date().toISOString().slice(0, 10)}.pdf`
   doc.save(filename)
 }
+
+// ═══════════════════════════════════════════════════════════
+// REPORTE INSTITUCIONAL (Director)
+// ═══════════════════════════════════════════════════════════
+
+export interface InstitutionalReportData {
+  org: { name: string }
+  kpis: {
+    total_students: number
+    avg_score:      number | null
+    pass_rate:      number | null
+    at_risk_count:  number
+  }
+  by_level: {
+    code:  string
+    count: number
+    avg:   number | null
+  }[]
+  at_risk_students: {
+    first_name: string
+    last_name:  string
+    course_name: string | null
+    avg_score:   number | null
+  }[]
+  worst_evaluations: {
+    title:           string
+    completed_count: number
+    avg_score:       number | null
+    cefr_code:       string | null
+  }[]
+  generated_at: string
+}
+
+export async function generateInstitutionalReport(data: InstitutionalReportData): Promise<void> {
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+
+  const W  = 210
+  const H  = 297
+  const ML = 16
+  const MR = 16
+  const CW = W - ML - MR
+  let   y  = 0
+
+  function ensureSpace(needed: number) {
+    if (y + needed > 265) { doc.addPage(); y = 20 }
+  }
+
+  // ── Header ──────────────────────────────────────────────
+  doc.setFillColor(...hexToRgb(BRAND))
+  doc.rect(0, 0, W, 36, 'F')
+
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(16)
+  doc.setTextColor(255, 255, 255)
+  doc.text(data.org.name, ML, 16)
+
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(9)
+  doc.setTextColor(220, 200, 240)
+  doc.text('Reporte Institucional', ML, 23)
+  doc.text(`Generado: ${formatDate(data.generated_at)}`, ML, 29)
+
+  y = 46
+
+  // ── KPIs ────────────────────────────────────────────────
+  const kpiBoxes = [
+    { label: 'Total alumnos',     value: String(data.kpis.total_students) },
+    { label: 'Promedio institucional', value: data.kpis.avg_score != null ? `${Math.round(data.kpis.avg_score)}%` : '—' },
+    { label: 'Tasa de aprobación', value: data.kpis.pass_rate != null ? `${Math.round(data.kpis.pass_rate)}%` : '—' },
+    { label: 'Alumnos en riesgo', value: String(data.kpis.at_risk_count) },
+  ]
+
+  const boxW = (CW - 12) / 4
+  kpiBoxes.forEach((k, i) => {
+    const bx = ML + i * (boxW + 4)
+    doc.setFillColor(255, 255, 255)
+    doc.setDrawColor(...hexToRgb('#e5e7eb'))
+    doc.roundedRect(bx, y, boxW, 22, 2, 2, 'FD')
+
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(14)
+    doc.setTextColor(...hexToRgb(i === 3 && data.kpis.at_risk_count > 0 ? RED : BRAND))
+    doc.text(k.value, bx + boxW / 2, y + 12, { align: 'center' })
+
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(7)
+    doc.setTextColor(...hexToRgb(SUBTEXT))
+    const lines = doc.splitTextToSize(k.label, boxW - 4)
+    doc.text(lines, bx + boxW / 2, y + 18, { align: 'center' })
+  })
+
+  y += 32
+
+  // ── Rendimiento por nivel CEFR ─────────────────────────
+  if (data.by_level.length > 0) {
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(10)
+    doc.setTextColor(...hexToRgb(TEXT))
+    doc.text('Rendimiento por nivel CEFR', ML, y)
+    y += 8
+
+    data.by_level.forEach(l => {
+      const barW     = CW - 50
+      const barH     = 5
+      const avg      = l.avg ?? 0
+      const fillW    = (avg / 100) * barW
+      const barColor = avg >= 80 ? GREEN : avg >= 60 ? '#f59e0b' : RED
+
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(8)
+      doc.setTextColor(...hexToRgb(TEXT))
+      doc.text(`${l.code} (${l.count})`, ML, y + 4)
+
+      doc.setFillColor(...hexToRgb('#e5e7eb'))
+      doc.roundedRect(ML + 28, y, barW, barH, 1, 1, 'F')
+
+      if (fillW > 0) {
+        doc.setFillColor(...hexToRgb(barColor))
+        doc.roundedRect(ML + 28, y, fillW, barH, 1, 1, 'F')
+      }
+
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(8)
+      doc.setTextColor(...hexToRgb(barColor))
+      doc.text(l.avg != null ? `${Math.round(l.avg)}%` : '—', ML + 28 + barW + 4, y + 4)
+
+      y += 9
+    })
+
+    y += 6
+  }
+
+  // ── Alumnos en riesgo ───────────────────────────────────
+  if (data.at_risk_students.length > 0) {
+    ensureSpace(20)
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(10)
+    doc.setTextColor(...hexToRgb(TEXT))
+    doc.text(`Alumnos en riesgo (${data.at_risk_students.length})`, ML, y)
+    y += 6
+
+    doc.setFillColor(...hexToRgb(BRAND))
+    doc.rect(ML, y, CW, 7, 'F')
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(8)
+    doc.setTextColor(255, 255, 255)
+    doc.text('Alumno', ML + 3, y + 5)
+    doc.text('Curso', ML + 90, y + 5)
+    doc.text('Promedio', ML + 155, y + 5)
+    y += 7
+
+    data.at_risk_students.slice(0, 20).forEach((s, i) => {
+      ensureSpace(8)
+      const rowH  = 7
+      doc.setFillColor(...hexToRgb(i % 2 === 0 ? '#ffffff' : '#fef2f2'))
+      doc.rect(ML, y, CW, rowH, 'F')
+      doc.setDrawColor(...hexToRgb('#e5e7eb'))
+      doc.line(ML, y + rowH, ML + CW, y + rowH)
+
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(8)
+      doc.setTextColor(...hexToRgb(TEXT))
+      doc.text(`${s.first_name} ${s.last_name}`, ML + 3, y + 5)
+      doc.text(s.course_name ?? '—', ML + 90, y + 5)
+
+      doc.setFont('helvetica', 'bold')
+      doc.setTextColor(...hexToRgb(RED))
+      doc.text(s.avg_score != null ? `${Math.round(s.avg_score)}%` : '—', ML + 155, y + 5)
+
+      y += rowH
+    })
+
+    y += 10
+  }
+
+  // ── Evaluaciones con menor rendimiento ─────────────────
+  if (data.worst_evaluations.length > 0) {
+    ensureSpace(20)
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(10)
+    doc.setTextColor(...hexToRgb(TEXT))
+    doc.text('Evaluaciones con menor rendimiento', ML, y)
+    y += 6
+
+    doc.setFillColor(...hexToRgb(BRAND))
+    doc.rect(ML, y, CW, 7, 'F')
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(8)
+    doc.setTextColor(255, 255, 255)
+    doc.text('Evaluación', ML + 3, y + 5)
+    doc.text('Nivel', ML + 110, y + 5)
+    doc.text('Completados', ML + 135, y + 5)
+    doc.text('Promedio', ML + 168, y + 5)
+    y += 7
+
+    data.worst_evaluations.forEach((e, i) => {
+      ensureSpace(8)
+      const rowH = 7
+      doc.setFillColor(...hexToRgb(i % 2 === 0 ? '#ffffff' : '#f9fafb'))
+      doc.rect(ML, y, CW, rowH, 'F')
+      doc.setDrawColor(...hexToRgb('#e5e7eb'))
+      doc.line(ML, y + rowH, ML + CW, y + rowH)
+
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(8)
+      doc.setTextColor(...hexToRgb(TEXT))
+      const title = e.title.length > 48 ? e.title.slice(0, 46) + '…' : e.title
+      doc.text(title, ML + 3, y + 5)
+      doc.text(e.cefr_code ?? '—', ML + 110, y + 5)
+      doc.text(String(e.completed_count), ML + 135, y + 5)
+
+      doc.setFont('helvetica', 'bold')
+      doc.setTextColor(...hexToRgb(e.avg_score != null ? scoreColor(e.avg_score) : SUBTEXT))
+      doc.text(e.avg_score != null ? `${Math.round(e.avg_score)}%` : '—', ML + 168, y + 5)
+
+      y += rowH
+    })
+  }
+
+  // ── Footer en cada página ─────────────────────────────────
+  const totalPages = (doc as any).internal.getNumberOfPages()
+  for (let p = 1; p <= totalPages; p++) {
+    doc.setPage(p)
+    doc.setFillColor(...hexToRgb(BRAND))
+    doc.rect(0, H - 12, W, 12, 'F')
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(7)
+    doc.setTextColor(220, 200, 240)
+    doc.text(data.org.name + ' · Reporte institucional', ML, H - 5)
+    doc.text(`Página ${p} de ${totalPages}`, W - ML, H - 5, { align: 'right' })
+  }
+
+  // ── Descargar ─────────────────────────────────────────────
+  const filename = `reporte_institucional_${data.org.name.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.pdf`
+  doc.save(filename)
+}

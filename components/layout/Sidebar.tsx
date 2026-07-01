@@ -51,6 +51,7 @@ const NAV: Record<RoleName, NavItem[]> = {
     { href: '/teacher/evaluations',   label: 'Evaluaciones',       icon: I.doc   },
     { href: '/teacher/results',       label: 'Correcciones',       icon: I.check },
     { href: '/teacher/students',      label: 'Reporte de alumnos', icon: '👥'    },
+    { href: '/teacher/speaking',      label: 'Audios de Speaking', icon: '🎙️'    },
     { href: '/teacher/courses',       label: 'Mis cursos',         icon: I.book  },
     { href: '/teacher/question-bank', label: 'Banco de preguntas', icon: I.book  },
   ],

@@ -6,14 +6,36 @@ import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 
 interface UserProfile {
-  id:         string
-  first_name: string
-  last_name:  string
-  email:      string
-  phone:      string | null
-  role_id:    number
-  is_active:  boolean
-  created_at: string
+  id:              string
+  first_name:      string
+  last_name:       string
+  email:           string
+  phone:           string | null
+  role_id:         number
+  is_active:       boolean
+  created_at:      string
+  first_login_at?: string | null
+  last_seen_at?:   string | null
+}
+
+function formatDate(iso?: string | null): string {
+  if (!iso) return '—'
+  return new Date(iso).toLocaleDateString('es-AR', {
+    day:   '2-digit',
+    month: '2-digit',
+    year:  'numeric',
+  })
+}
+
+function formatDateTime(iso?: string | null): string {
+  if (!iso) return '—'
+  return new Date(iso).toLocaleDateString('es-AR', {
+    day:    '2-digit',
+    month:  '2-digit',
+    year:   'numeric',
+    hour:   '2-digit',
+    minute: '2-digit',
+  })
 }
 
 const ROLE_LABELS: Record<number, string> = {
@@ -100,7 +122,7 @@ export default function UsersClient({ orgId, orgName = 'OnGest' }: UsersClientPr
     setLoading(true)
     const { data } = await supabase
       .from('profiles')
-      .select('id, first_name, last_name, email, phone, role_id, is_active, created_at')
+      .select('id, first_name, last_name, email, phone, role_id, is_active, created_at, first_login_at, last_seen_at')
       .eq('organization_id', orgId)
       .order('created_at', { ascending: false })
     setUsers(data ?? [])
@@ -251,18 +273,22 @@ Cualquier consulta estamos a disposición 😊`
                 <th className="text-left px-4 py-3 font-semibold text-gray-700">Email</th>
                 <th className="text-left px-4 py-3 font-semibold text-gray-700">Rol</th>
                 <th className="text-left px-4 py-3 font-semibold text-gray-700">Estado</th>
+                <th className="text-left px-4 py-3 font-semibold text-gray-700">Primer acceso</th>
+                <th className="text-left px-4 py-3 font-semibold text-gray-700">Último acceso</th>
                 <th className="text-right px-4 py-3 font-semibold text-gray-700">Acciones</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="text-center py-8 text-gray-400">
+                  <td colSpan={7} className="text-center py-8 text-gray-400">
                     No se encontraron usuarios
                   </td>
                 </tr>
               ) : (
-                filtered.map(user => (
+                filtered.map(user => {
+                  const nuncaIngreso = !user.first_login_at
+                  return (
                   <tr key={user.id} className="hover:bg-gray-50 transition-colors">
                     <td className="px-4 py-3 font-medium text-gray-900">
                       {user.first_name} {user.last_name}
@@ -281,6 +307,18 @@ Cualquier consulta estamos a disposición 😊`
                       }`}>
                         {user.is_active ? 'Activo' : 'Inactivo'}
                       </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      {nuncaIngreso
+                        ? <span className="text-xs text-amber-600 font-medium">Nunca ingresó</span>
+                        : <span className="text-xs text-gray-500">{formatDate(user.first_login_at)}</span>
+                      }
+                    </td>
+                    <td className="px-4 py-3">
+                      {nuncaIngreso
+                        ? <span className="text-gray-300 text-xs">—</span>
+                        : <span className="text-xs text-gray-500">{formatDateTime(user.last_seen_at)}</span>
+                      }
                     </td>
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-2">
@@ -303,7 +341,8 @@ Cualquier consulta estamos a disposición 😊`
                       </div>
                     </td>
                   </tr>
-                ))
+                  )
+                })
               )}
             </tbody>
           </table>

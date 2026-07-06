@@ -113,20 +113,29 @@ export default function StudentsClient({ orgId }: { orgId: string }) {
 
   async function handleEdit() {
     if (!editing) return
-    setSaving(true)
-    await sb.from('profiles').update({
-      first_name: form.first_name.trim(),
-      last_name:  form.last_name.trim(),
-      phone:      form.phone.trim() || null,
-      birth_date: form.birth_date || null,
-    }).eq('id', editing.id)
-
-    if (form.course_id !== (editing.course_id ?? '')) {
-      if (editing.course_id) await sb.from('enrollments').delete().eq('student_id', editing.id)
-      if (form.course_id)    await sb.from('enrollments').insert({ student_id: editing.id, course_id: form.course_id })
+    if (!form.first_name || !form.last_name || !form.email) {
+      showToast('err', 'Nombre, apellido y email son obligatorios.')
+      return
     }
+    setSaving(true)
+    const res = await fetch('/api/students/update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        student_id: editing.id,
+        first_name: form.first_name.trim(),
+        last_name:  form.last_name.trim(),
+        email:      form.email.trim(),
+        phone:      form.phone.trim() || null,
+        birth_date: form.birth_date || null,
+        course_id:  form.course_id || '',
+      }),
+    })
+    const data = await res.json()
+    setSaving(false)
+    if (!res.ok) { showToast('err', data.error ?? 'Error al actualizar el alumno.'); return }
 
-    await load(); setSaving(false); showToast('ok', 'Alumno actualizado.'); closeModal()
+    await load(); showToast('ok', 'Alumno actualizado.'); closeModal()
   }
 
   async function toggleActive(s: Student) {
@@ -284,10 +293,9 @@ export default function StudentsClient({ orgId }: { orgId: string }) {
                   <input type="email" value={form.email}
                     onChange={e => setForm(p=>({...p, email:e.target.value}))}
                     placeholder="juan@email.com" className="input"
-                    disabled={modal === 'edit'}
                   />
                   {modal === 'edit' && (
-                    <p className="text-xs text-gray-400 mt-1">El email no puede modificarse desde aquí.</p>
+                    <p className="text-xs text-gray-400 mt-1">Si lo cambiás, el alumno deberá usar el nuevo email para ingresar.</p>
                   )}
                 </div>
 

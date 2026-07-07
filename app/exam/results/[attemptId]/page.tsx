@@ -38,6 +38,51 @@ export default async function StudentResultPage({
     )
   }
 
+  // 🔒 REGLA CRÍTICA: bajo ningún concepto se muestra nota, corrección o
+  // información de puntaje al alumno hasta que el docente haya finalizado
+  // la corrección completa del examen (status === 'graded').
+  // Esto aplica incluso a las preguntas de opción múltiple / V-F, que se
+  // auto-marcan como correctas/incorrectas apenas se entrega el examen
+  // (para que el docente las vea ya resueltas) — esa marca es solo para
+  // uso interno del corrector, nunca para mostrarle nada al alumno antes
+  // de que la corrección esté 100% finalizada.
+  if (attempt.status !== 'graded') {
+    return (
+      <div className="flex flex-1 flex-col overflow-hidden">
+        <TopBar
+          title="Resultado del examen"
+          subtitle={attempt.evaluations?.title ?? ''}
+          actions={
+            <a href="/exam" className="btn-outline text-sm">← Mis evaluaciones</a>
+          }
+        />
+        <main className="flex-1 overflow-y-auto p-4 md:p-6 max-w-lg mx-auto w-full">
+          <div className="card text-center py-12">
+            <div className="w-16 h-16 rounded-full flex items-center justify-center text-3xl mx-auto mb-5"
+              style={{ backgroundColor: '#f5eefb' }}>
+              ⏳
+            </div>
+            <h2 className="text-lg font-bold text-gray-900 mb-3">Corrección en proceso</h2>
+            <p className="text-sm text-gray-600 leading-relaxed max-w-sm mx-auto">
+              Tu examen fue entregado correctamente y está siendo corregido por tu docente.
+              Todavía no hay información disponible sobre tu resultado.
+            </p>
+            <p className="text-sm text-gray-500 mt-3">
+              Vas a recibir una notificación 🔔 apenas esté disponible tu nota.
+            </p>
+            <a
+              href="/results"
+              className="inline-flex items-center justify-center mt-6 px-5 py-2.5 text-sm font-semibold text-white rounded-xl hover:opacity-90 transition-opacity"
+              style={{ backgroundColor: '#642f8d' }}
+            >
+              Ir a Mis notas →
+            </a>
+          </div>
+        </main>
+      </div>
+    )
+  }
+
   // Cargar respuestas con preguntas, opciones y feedback del docente
   const { data: answers } = await sb
     .from('answers')
@@ -87,14 +132,6 @@ export default async function StudentResultPage({
           </div>
           {eval_?.pass_score && (
             <p className="text-xs text-gray-400">Puntaje mínimo: {eval_.pass_score}%</p>
-          )}
-          {attempt.status === 'submitted' && (
-            <div className="mt-3 bg-amber-50 border border-amber-200 rounded-lg px-4 py-2.5">
-              <p className="text-sm text-amber-800">
-                ⏳ Algunas respuestas están pendientes de corrección por el docente.
-                El puntaje puede cambiar.
-              </p>
-            </div>
           )}
         </div>
 

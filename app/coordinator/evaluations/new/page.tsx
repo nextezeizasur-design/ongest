@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { CEFR_LEVELS } from '@/lib/utils'
+import { CEFR_LEVELS, fromDatetimeLocalValue } from '@/lib/utils'
 import type { QuestionType, Option } from '@/types'
 import QuestionDifficultyEditor from '@/components/shared/QuestionDifficultyEditor'
 import QuestionBankPage from '@/components/shared/QuestionBankPage'
@@ -274,8 +274,8 @@ export default function NewEvaluationPage() {
       eval_type:       evalType,
       time_limit_min:  timeLimit,
       pass_score:      passScore,
-      available_from:  availFrom  || null,
-      available_until: availUntil || null,
+      available_from:  fromDatetimeLocalValue(availFrom),
+      available_until: fromDatetimeLocalValue(availUntil),
       status,
       created_by:      user.id,
     }).select().single()

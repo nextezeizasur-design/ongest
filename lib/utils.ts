@@ -54,6 +54,35 @@ export function daysUntil(date?: string | null): number | null {
   return Math.ceil((new Date(date).getTime() - Date.now()) / 86_400_000)
 }
 
+// ─── Conversión de fechas para <input type="datetime-local"> ──
+// PROBLEMA QUE RESUELVEN: un <input type="datetime-local"> no tiene noción de
+// zona horaria — su string ("2026-07-07T14:00") es "hora de pared", sin UTC.
+// Si se guarda ese string tal cual en un timestamptz, Postgres lo toma como
+// 14:00 UTC (11:00 hora Argentina), no como 14:00 hora Argentina que es lo
+// que la persona tipeó. Estas dos funciones hacen la conversión correcta en
+// ambos sentidos, usando siempre la zona horaria local del navegador.
+
+// De timestamptz (UTC, ej. lo que viene de Supabase) → valor para el input,
+// en hora LOCAL del navegador (para que se vea la hora real, no la de UTC).
+export function toDatetimeLocalValue(iso?: string | null): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return ''
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+// Del valor del input (hora LOCAL del navegador, sin zona) → ISO en UTC
+// listo para guardar en un timestamptz.
+export function fromDatetimeLocalValue(value: string): string | null {
+  if (!value) return null
+  // "2026-07-07T14:00" sin sufijo de zona → el motor de JS lo interpreta
+  // como hora local del navegador, que es exactamente lo que necesitamos.
+  const d = new Date(value)
+  if (isNaN(d.getTime())) return null
+  return d.toISOString()
+}
+
 // ─── Evaluation status ────────────────────────────────────────
 export function getEvalStatus(ev: {
   status: EvalStatus

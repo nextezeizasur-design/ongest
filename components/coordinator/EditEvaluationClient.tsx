@@ -6,7 +6,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { CEFR_LEVELS } from '@/lib/utils'
+import { CEFR_LEVELS, toDatetimeLocalValue, fromDatetimeLocalValue } from '@/lib/utils'
 import type { QuestionType } from '@/types'
 import { useConfirm } from '@/hooks/useConfirm'
 import QuestionBankPage from '@/components/shared/QuestionBankPage'
@@ -48,8 +48,8 @@ export default function EditEvaluationClient({ evaluation: ev, questions: dbQs, 
   const [evalType,    setEvalType]    = useState(ev.eval_type ?? 'multiple_choice')
   const [timeLimit,   setTimeLimit]   = useState(ev.time_limit_min ?? 30)
   const [passScore,   setPassScore]   = useState(ev.pass_score ?? 60)
-  const [availFrom,   setAvailFrom]   = useState(ev.available_from?.slice(0, 16) ?? '')
-  const [availUntil,  setAvailUntil]  = useState(ev.available_until?.slice(0, 16) ?? '')
+  const [availFrom,   setAvailFrom]   = useState(toDatetimeLocalValue(ev.available_from))
+  const [availUntil,  setAvailUntil]  = useState(toDatetimeLocalValue(ev.available_until))
   const [description, setDescription] = useState(ev.description ?? '')
   const [instructions, setInstructions] = useState(ev.instructions ?? '')
 
@@ -115,8 +115,8 @@ export default function EditEvaluationClient({ evaluation: ev, questions: dbQs, 
         eval_type:       evalType,
         time_limit_min:  timeLimit,
         pass_score:      passScore,
-        available_from:  availFrom  || null,
-        available_until: availUntil || null,
+        available_from:  fromDatetimeLocalValue(availFrom),
+        available_until: fromDatetimeLocalValue(availUntil),
         status,
       })
       .eq('id', ev.id)

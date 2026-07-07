@@ -19,10 +19,34 @@ export default async function TeacherEvaluations() {
     .eq('organization_id', profile.organization_id)
     .order('available_until', { ascending: false })
 
-  // Teacher ve solo las suyas; director/coordinator ven todas
-  const filtered = profile.role === 'teacher'
-    ? (evals ?? []).filter((e: any) => e.created_by === profile.id || true) // por ahora ve todas de la org
-    : (evals ?? [])
+  // Teacher ve solo las evaluaciones asignadas a los cursos que él dicta;
+  // director/coordinator ven todas las de la organización.
+  let filtered = evals ?? []
+
+  if (profile.role === 'teacher') {
+    // 1. Cursos que dicta este docente
+    const { data: myCourses } = await sb
+      .from('courses')
+      .select('id')
+      .eq('organization_id', profile.organization_id)
+      .eq('teacher_id', profile.id)
+
+    const myCourseIds = (myCourses ?? []).map((c: any) => c.id)
+
+    // 2. Evaluaciones asignadas a esos cursos (2 pasos: PostgREST no permite
+    // filtrar por columnas de una tabla relacionada con .eq() directo)
+    let myEvalIds: string[] = []
+    if (myCourseIds.length > 0) {
+      const { data: ecs } = await sb
+        .from('evaluation_courses')
+        .select('evaluation_id')
+        .in('course_id', myCourseIds)
+
+      myEvalIds = Array.from(new Set((ecs ?? []).map((e: any) => e.evaluation_id)))
+    }
+
+    filtered = (evals ?? []).filter((e: any) => myEvalIds.includes(e.id))
+  }
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">

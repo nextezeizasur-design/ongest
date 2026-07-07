@@ -6,7 +6,7 @@ export default async function TeacherLayout({ children }: { children: React.Reac
   return (
     <div className="flex h-screen overflow-hidden bg-gray-50">
       <Sidebar
-        role="teacher"
+        role={profile.role}
         name={`${profile.first_name} ${profile.last_name}`}
         email={profile.email}
       />

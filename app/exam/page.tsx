@@ -5,6 +5,7 @@ import Sidebar from '@/components/layout/Sidebar'
 import MobileNav from '@/components/layout/MobileNav'
 import TopBar from '@/components/layout/TopBar'
 import EmptyState from '@/components/ui/EmptyState'
+import CountdownLabel from '@/components/student/CountdownLabel'
 import { formatDate, daysUntil, EVAL_TYPE_LABEL, getEvalStatus } from '@/lib/utils'
 import type { Attempt } from '@/types'
 
@@ -129,12 +130,13 @@ export default async function ExamListPage() {
               </div>
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-semibold text-gray-900">
-                  {reminderIsLock
-                    ? `Tu próximo examen se habilita ${reminderDays === 0 ? 'hoy' : `en ${reminderDays} día${reminderDays !== 1 ? 's' : ''}`}`
-                    : reminderDays <= 0
-                      ? 'Tu próximo examen vence hoy'
-                      : `Tu próximo examen vence en ${reminderDays} día${reminderDays !== 1 ? 's' : ''}`
-                  }
+                  {reminderIsLock ? (
+                    <>Tu próximo examen se habilita <CountdownLabel target={reminderEval.available_from} prefix="en " /></>
+                  ) : reminderDays <= 0 ? (
+                    'Tu próximo examen vence hoy'
+                  ) : (
+                    `Tu próximo examen vence en ${reminderDays} día${reminderDays !== 1 ? 's' : ''}`
+                  )}
                 </p>
                 <p className="text-xs text-gray-500 truncate">{reminderEval.title}</p>
               </div>
@@ -263,7 +265,8 @@ export default async function ExamListPage() {
                           {ev.time_limit_min && <span>⏱ {ev.time_limit_min} min</span>}
                           {isLocked && (
                             <span className="font-medium text-purple-600">
-                              🔒 Se habilita {formatDate(ev.available_from)}
+                              🔒 Se habilita {formatDate(ev.available_from)} ·{' '}
+                              <CountdownLabel target={ev.available_from} prefix="en " />
                             </span>
                           )}
                           {!isLocked && !isExpired && days !== null && (

@@ -10,20 +10,46 @@ import { formatDateTime, formatDuration } from '@/lib/utils'
 
 export const metadata = { title: 'Resultados' }
 
-export default async function CoordinatorResults() {
+export default async function CoordinatorResults({
+  searchParams,
+}: {
+  searchParams: Promise<{ eval?: string }>
+}) {
+  const { eval: evalFilter } = await searchParams
   const profile  = await requireRole(['director', 'coordinator'] as any)
   const supabase = await createClient()
   const sb       = supabase as any
 
-  // ── Paso 1: IDs de evaluaciones de esta organización ──────────────────
+  const base = profile.role === 'director' ? '/director' : '/coordinator'
+
+  // Si viene ?eval=<id>, filtramos a esa evaluación puntual y traemos su
+  // título para mostrarlo arriba. Si el id no existe o es de otra org,
+  // filterEvalTitle queda null y se listan 0 resultados (no se filtra a
+  // ciegas por un id ajeno).
+  let filterEvalTitle: string | null = null
+  if (evalFilter) {
+    const { data: evRow } = await sb
+      .from('evaluations')
+      .select('id, title')
+      .eq('id', evalFilter)
+      .eq('organization_id', profile.organization_id)
+      .maybeSingle()
+    filterEvalTitle = evRow?.title ?? null
+  }
+
+  // ── Paso 1: IDs de evaluaciones a considerar ───────────────────────────
   // NUNCA filtrar por columnas de tablas relacionadas con .eq() en Supabase JS
   // — PostgREST lo ignora silenciosamente y devuelve todos los registros.
-  const { data: evalIds } = await sb
-    .from('evaluations')
-    .select('id')
-    .eq('organization_id', profile.organization_id)
-
-  const ids = (evalIds ?? []).map((e: any) => e.id)
+  let ids: string[] = []
+  if (evalFilter) {
+    ids = filterEvalTitle ? [evalFilter] : []
+  } else {
+    const { data: evalIds } = await sb
+      .from('evaluations')
+      .select('id')
+      .eq('organization_id', profile.organization_id)
+    ids = (evalIds ?? []).map((e: any) => e.id)
+  }
 
   let all: any[] = []
 
@@ -50,10 +76,28 @@ export default async function CoordinatorResults() {
     <div className="flex flex-1 flex-col overflow-hidden">
       <TopBar
         title="Resultados"
-        subtitle={`${pending.length} pendiente${pending.length !== 1 ? 's' : ''} de corrección · ${completed.length} corregido${completed.length !== 1 ? 's' : ''}`}
+        subtitle={
+          filterEvalTitle
+            ? `${filterEvalTitle} · ${pending.length} pendiente${pending.length !== 1 ? 's' : ''} · ${completed.length} corregido${completed.length !== 1 ? 's' : ''}`
+            : `${pending.length} pendiente${pending.length !== 1 ? 's' : ''} de corrección · ${completed.length} corregido${completed.length !== 1 ? 's' : ''}`
+        }
+        actions={
+          evalFilter ? (
+            <a href={`${base}/results`} className="btn-outline text-sm">Ver todos los resultados</a>
+          ) : undefined
+        }
       />
 
       <main className="flex-1 overflow-y-auto p-6 space-y-6">
+
+        {evalFilter && !filterEvalTitle && (
+          <div className="card text-center py-8">
+            <p className="text-amber-600 font-medium">No se encontró esa evaluación.</p>
+            <a href={`${base}/results`} className="text-sm text-purple-600 hover:underline mt-2 inline-block">
+              Ver todos los resultados →
+            </a>
+          </div>
+        )}
 
         {/* ── Pendientes ── */}
         {pending.length > 0 ? (

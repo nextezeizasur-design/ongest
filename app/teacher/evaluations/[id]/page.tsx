@@ -12,6 +12,61 @@ import { formatDate, formatDateTime, formatDuration, getEvalStatus, EVAL_STATUS_
 
 export const metadata = { title: 'Evaluación' }
 
+// ── Etiqueta legible por tipo de pregunta ──────────────────────────────────
+function qTypeLabel(type: string) {
+  const map: Record<string, string> = {
+    multiple_choice: 'Opción múltiple',
+    true_false:      'Verdadero / Falso',
+    short_answer:    'Respuesta abierta',
+    essay:           'Respuesta abierta',
+    speaking:        'Speaking',
+    word_order:      'Ordenar palabras',
+    match:           'Relacionar',
+    fill_blank:      'Completar',
+  }
+  return map[type] ?? type
+}
+
+// ── Badge colorido por tipo ────────────────────────────────────────────────
+function TypeBadge({ type }: { type: string }) {
+  const styles: Record<string, string> = {
+    multiple_choice: 'bg-blue-50 text-blue-700 border-blue-200',
+    true_false:      'bg-indigo-50 text-indigo-700 border-indigo-200',
+    short_answer:    'bg-amber-50 text-amber-700 border-amber-200',
+    essay:           'bg-amber-50 text-amber-700 border-amber-200',
+    speaking:        'bg-rose-50 text-rose-700 border-rose-200',
+    word_order:      'bg-teal-50 text-teal-700 border-teal-200',
+    match:           'bg-cyan-50 text-cyan-700 border-cyan-200',
+    fill_blank:      'bg-orange-50 text-orange-700 border-orange-200',
+  }
+  const cls = styles[type] ?? 'bg-gray-50 text-gray-600 border-gray-200'
+  return (
+    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${cls}`}>
+      {qTypeLabel(type)}
+    </span>
+  )
+}
+
+// ── Renderiza el enunciado según el tipo ───────────────────────────────────
+// Para word_order y match el body es "word / word / word", lo mostramos como chips
+function QuestionBody({ body, type }: { body: string; type: string }) {
+  if ((type === 'word_order' || type === 'match') && body.includes('/')) {
+    const words = body.split('/').map(w => w.trim()).filter(Boolean)
+    return (
+      <div className="flex flex-wrap gap-1.5 mb-3">
+        {words.map((w, i) => (
+          <span key={i} className="inline-flex items-center rounded-md bg-gray-100 px-2.5 py-1 text-sm font-medium text-gray-700 border border-gray-200">
+            {w}
+          </span>
+        ))}
+      </div>
+    )
+  }
+  return (
+    <p className="text-sm font-medium text-gray-900 mb-3 leading-relaxed">{body}</p>
+  )
+}
+
 export default async function TeacherEvaluationDetail({
   params,
 }: {
@@ -72,11 +127,22 @@ export default async function TeacherEvaluationDetail({
       .eq('evaluation_id', id)
       .in('status', ['submitted', 'graded', 'in_progress', 'timed_out'])
       .order('submitted_at', { ascending: false }),
-    sb.from('questions').select('id, q_type, body, points, sort_order').eq('evaluation_id', id).order('sort_order'),
+    sb.from('questions')
+      .select('id, q_type, body, points, sort_order, explanation, options(id, body, is_correct, sort_order)')
+      .eq('evaluation_id', id)
+      .order('sort_order'),
     sb.from('evaluation_courses')
       .select('courses(id, name, cefr_levels(code))')
       .eq('evaluation_id', id),
   ])
+
+  const sortedQuestions = (questions ?? [])
+    .slice()
+    .sort((a: any, b: any) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+    .map((q: any) => ({
+      ...q,
+      options: (q.options ?? []).slice().sort((a: any, b: any) => (a.sort_order ?? 0) - (b.sort_order ?? 0)),
+    }))
 
   const completedAtts = (attempts ?? []).filter((a: any) => ['submitted', 'graded'].includes(a.status))
   const pendingGrade  = completedAtts.filter((a: any) => a.status === 'submitted')
@@ -193,6 +259,86 @@ export default async function TeacherEvaluationDetail({
             </div>
           )}
         </div>
+
+        {/* Vista previa del examen */}
+        <details className="card p-0 overflow-hidden group">
+          <summary className="cursor-pointer list-none px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm font-semibold text-gray-900">Vista previa del examen</h2>
+              <span className="text-xs text-gray-400">({sortedQuestions.length} pregunta{sortedQuestions.length !== 1 ? 's' : ''})</span>
+            </div>
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.7}
+              className="h-4 w-4 text-gray-400 transition-transform group-open:rotate-180">
+              <path d="M5 7.5L10 12.5L15 7.5" />
+            </svg>
+          </summary>
+
+          <div className="p-5 space-y-4 bg-gray-50">
+            {sortedQuestions.length === 0 ? (
+              <p className="text-sm text-gray-400 text-center py-6">Esta evaluación todavía no tiene preguntas cargadas.</p>
+            ) : (
+              sortedQuestions.map((q: any, idx: number) => {
+                const isObj = ['multiple_choice', 'true_false'].includes(q.q_type)
+                return (
+                  <div key={q.id} className="card bg-white">
+                    <div className="flex items-start justify-between gap-3 mb-3">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className="flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold text-white flex-shrink-0"
+                          style={{ background: '#642f8d' }}
+                        >
+                          {idx + 1}
+                        </span>
+                        <TypeBadge type={q.q_type} />
+                      </div>
+                      <span className="text-xs font-medium text-gray-400">
+                        {q.points} pt{q.points !== 1 ? 's' : ''}
+                      </span>
+                    </div>
+
+                    <QuestionBody body={q.body} type={q.q_type} />
+
+                    {/* Opciones — objetiva */}
+                    {isObj && q.options?.length > 0 && (
+                      <div className="space-y-1.5">
+                        {q.options.map((opt: any) => (
+                          <div key={opt.id} className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm ${
+                            opt.is_correct ? 'border-green-300 bg-green-50' : 'border-gray-200 bg-gray-50'
+                          }`}>
+                            <span className={`text-xs font-medium ${opt.is_correct ? 'text-green-700' : 'text-gray-400'}`}>
+                              {opt.is_correct ? '✓' : '·'}
+                            </span>
+                            <span className={opt.is_correct ? 'text-green-800' : 'text-gray-600'}>
+                              {opt.body}
+                            </span>
+                            {opt.is_correct && (
+                              <span className="ml-auto text-xs text-green-700">Correcta</span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Respuesta abierta / speaking — sin respuesta modelo, solo aviso */}
+                    {['short_answer', 'essay'].includes(q.q_type) && (
+                      <p className="text-xs text-gray-400 italic">Requiere corrección manual del docente.</p>
+                    )}
+                    {q.q_type === 'speaking' && (
+                      <p className="text-xs text-gray-400 italic">El alumno responde con grabación de audio.</p>
+                    )}
+
+                    {q.explanation && (
+                      <div className="mt-3 rounded-lg bg-blue-50 border border-blue-100 px-3 py-2">
+                        <p className="text-[10px] font-medium text-blue-500 uppercase tracking-wide mb-0.5">Explicación</p>
+                        <p className="text-xs text-blue-700 leading-relaxed">{q.explanation}</p>
+                      </div>
+                    )}
+                  </div>
+                )
+              })
+            )}
+          </div>
+        </details>
 
         {/* Attempts table */}
         <div className="card p-0 overflow-hidden">

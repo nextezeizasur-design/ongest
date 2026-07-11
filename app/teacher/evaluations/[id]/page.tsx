@@ -1,413 +1,273 @@
-'use client'
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
 
-import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
+import { requireRole } from '@/lib/auth'
+import { createClient } from '@/lib/supabase/server'
+import TopBar from '@/components/layout/TopBar'
 import ScoreBar from '@/components/ui/ScoreBar'
 import Badge from '@/components/ui/Badge'
-import StudentRadarCard from '@/components/shared/StudentRadarCard'
+import AlertBanner from '@/components/ui/AlertBanner'
+import DeleteEvaluationButton from '@/components/coordinator/DeleteEvaluationButton'
+import { formatDate, formatDateTime, formatDuration, getEvalStatus, EVAL_STATUS_LABEL, ATTEMPT_STATUS_LABEL, EVAL_TYPE_LABEL } from '@/lib/utils'
 
-interface Answer {
-  id: string
-  question_id: string
-  option_id?: string
-  text_answer?: string
-  is_correct?: boolean
-  points_earned: number
-  grader_note?: string
-  questions: {
-    id: string
-    sort_order: number
-    q_type: string
-    body: string
-    points: number
-    options?: { id: string; body: string; is_correct: boolean }[]
-  }
-}
+export const metadata = { title: 'Evaluación' }
 
-interface Attempt {
-  id: string
-  score?: number
-  passed?: boolean
-  status: string
-  teacher_feedback?: string
-  evaluations: { title: string; pass_score: number }
-  profiles: { first_name: string; last_name: string; email: string }
-}
-
-export default function GradePage({ params }: { params: Promise<{ id: string }> }) {
-  const router   = useRouter()
-  const supabase = createClient()
+export default async function TeacherEvaluationDetail({
+  params,
+}: {
+  params: Promise<{ id: string }>
+}) {
+  const { id }   = await params
+  const profile  = await requireRole(['director', 'coordinator', 'teacher'] as any)
+  const supabase = await createClient()
   const sb       = supabase as any
 
-  const [attemptId, setAttemptId] = useState<string | null>(null)
-  const [attempt,   setAttempt]   = useState<Attempt | null>(null)
-  const [answers,   setAnswers]   = useState<Answer[]>([])
-  const [points,    setPoints]    = useState<Record<string, number>>({})
-  const [notes,     setNotes]     = useState<Record<string, string>>({})
-  const [feedback,  setFeedback]  = useState('')
-  const [saving,    setSaving]    = useState(false)
-  const [loading,   setLoading]   = useState(true)
-  const [studentId, setStudentId] = useState<string>('')
-  const [graderId,  setGraderId]  = useState<string | null>(null)
-  const [saveError, setSaveError] = useState<string | null>(null)
+  const { data: ev } = await sb
+    .from('evaluations')
+    .select('*, cefr_levels(code, label)')
+    .eq('id', id)
+    .eq('organization_id', profile.organization_id)
+    .single()
 
-  useEffect(() => {
-    params.then(p => setAttemptId(p.id))
-    sb.auth.getUser().then(({ data }: any) => {
-      if (data?.user?.id) setGraderId(data.user.id)
-    })
-  }, [params])
+  if (!ev) {
+    return (
+      <div className="flex flex-1 items-center justify-center">
+        <p className="text-gray-400 text-sm">Evaluación no encontrada.</p>
+      </div>
+    )
+  }
 
-  useEffect(() => {
-    if (!attemptId) return
-    async function load() {
-      const [{ data: att }, { data: ans }] = await Promise.all([
-        sb.from('attempts')
-          .select('*, evaluations(title, pass_score), profiles!attempts_student_id_fkey(first_name, last_name, email)')
-          .eq('id', attemptId)
-          .single(),
-        sb.from('answers')
-          .select('*, questions(id, sort_order, q_type, body, points, options(id, body, is_correct))')
-          .eq('attempt_id', attemptId),
-      ])
+  // Si es docente, sólo puede ver evaluaciones asignadas a cursos que él dicta.
+  if (profile.role === 'teacher') {
+    const { data: myCourses } = await sb
+      .from('courses')
+      .select('id')
+      .eq('organization_id', profile.organization_id)
+      .eq('teacher_id', profile.id)
 
-      setAttempt(att)
-      setAnswers((ans ?? []).sort((a: any, b: any) => (a.questions?.sort_order ?? 0) - (b.questions?.sort_order ?? 0)))
-      setFeedback(att?.teacher_feedback ?? '')
-      if (att?.student_id) setStudentId(att.student_id)
+    const myCourseIds = (myCourses ?? []).map((c: any) => c.id)
 
-      const initialPoints: Record<string, number> = {}
-      const initialNotes:  Record<string, string>  = {}
-      ;(ans ?? []).forEach((a: any) => {
-        initialPoints[a.id] = a.points_earned ?? 0
-        initialNotes[a.id]  = a.grader_note ?? ''
-      })
-      setPoints(initialPoints)
-      setNotes(initialNotes)
-      setLoading(false)
+    let isAssignedToMe = false
+    if (myCourseIds.length > 0) {
+      const { data: ec } = await sb
+        .from('evaluation_courses')
+        .select('evaluation_id')
+        .eq('evaluation_id', id)
+        .in('course_id', myCourseIds)
+      isAssignedToMe = (ec ?? []).length > 0
     }
-    load()
-  }, [attemptId])
 
-  async function handleSave(finalize: boolean) {
-    if (!attemptId || !attempt) return
-    setSaving(true)
-    setSaveError(null)
-
-    try {
-      // 1. Guardar cada respuesta abierta
-      for (const ans of answers) {
-        const q = ans.questions
-        if (!['short_answer', 'essay'].includes(q.q_type)) continue
-
-        const earned = Math.min(Math.max(points[ans.id] ?? 0, 0), q.points)
-        const { error: ansErr } = await sb.from('answers').update({
-          points_earned: earned,
-          grader_note:   notes[ans.id] ?? '',
-          is_correct:    earned > 0,
-        }).eq('id', ans.id)
-
-        if (ansErr) throw new Error(`Error al guardar respuesta: ${ansErr.message}`)
-      }
-
-      // 2. Recalcular score desde BD (fuente de verdad)
-      const { data: allAnswers, error: fetchErr } = await sb
-        .from('answers')
-        .select('points_earned, questions(points)')
-        .eq('attempt_id', attemptId)
-
-      if (fetchErr) throw new Error(`Error al recalcular score: ${fetchErr.message}`)
-
-      let totalPoints = 0
-      let earnedPoints = 0
-      ;(allAnswers ?? []).forEach((a: any) => {
-        totalPoints  += a.questions?.points ?? 0
-        earnedPoints += a.points_earned ?? 0
-      })
-      const newScore = totalPoints > 0 ? Math.round((earnedPoints / totalPoints) * 100) : 0
-      const passed   = newScore >= (attempt.evaluations?.pass_score ?? 60)
-
-      // 3. UPDATE del attempt — con graded_by y manejo de error explícito
-      const updatePayload: Record<string, any> = {
-        score:            newScore,
-        passed:           passed,
-        teacher_feedback: feedback,
-        status:           finalize ? 'graded' : 'submitted',
-        graded_at:        finalize ? new Date().toISOString() : null,
-      }
-      if (finalize && graderId) {
-        updatePayload.graded_by = graderId
-      }
-
-      const { error: updateErr } = await sb
-        .from('attempts')
-        .update(updatePayload)
-        .eq('id', attemptId)
-
-      if (updateErr) throw new Error(`Error al finalizar corrección: ${updateErr.message}`)
-
-      // 4. Solo navegar si todo salió OK
-      setSaving(false)
-      if (finalize) {
-        router.push('/teacher/results')
-      }
-
-    } catch (err: any) {
-      console.error('handleSave error:', err)
-      setSaveError(err?.message ?? 'Error inesperado')
-      setSaving(false)
+    if (!isAssignedToMe) {
+      return (
+        <div className="flex flex-1 items-center justify-center">
+          <p className="text-gray-400 text-sm">Evaluación no encontrada.</p>
+        </div>
+      )
     }
   }
 
-  if (loading) return (
-    <div className="flex h-screen items-center justify-center text-gray-400 text-sm">Cargando…</div>
-  )
-  if (!attempt) return (
-    <div className="flex h-screen items-center justify-center text-gray-400 text-sm">Intento no encontrado.</div>
-  )
+  const [{ data: attempts }, { data: questions }, { data: assignedCourses }] = await Promise.all([
+    sb.from('attempts')
+      .select('*, profiles!attempts_student_id_fkey(first_name, last_name, email)')
+      .eq('evaluation_id', id)
+      .in('status', ['submitted', 'graded', 'in_progress', 'timed_out'])
+      .order('submitted_at', { ascending: false }),
+    sb.from('questions').select('id, q_type, body, points, sort_order').eq('evaluation_id', id).order('sort_order'),
+    sb.from('evaluation_courses')
+      .select('courses(id, name, cefr_levels(code))')
+      .eq('evaluation_id', id),
+  ])
 
-  const student      = attempt.profiles
-  const totalPts     = answers.reduce((a, ans) => a + (ans.questions?.points ?? 0), 0)
-  const earnedPts    = Object.entries(points).reduce((acc, [id, pts]) => {
-    const ans    = answers.find(a => a.id === id)
-    const maxPts = ans?.questions?.points ?? 0
-    return acc + Math.min(pts, maxPts)
-  }, 0)
-  const previewScore = totalPts > 0 ? Math.round((earnedPts / totalPts) * 100) : 0
-  const passScore    = attempt.evaluations?.pass_score ?? 60
+  const completedAtts = (attempts ?? []).filter((a: any) => ['submitted', 'graded'].includes(a.status))
+  const pendingGrade  = completedAtts.filter((a: any) => a.status === 'submitted')
+  const avgScore      = completedAtts.length
+    ? Math.round(completedAtts.reduce((acc: number, a: any) => acc + (a.score ?? 0), 0) / completedAtts.length)
+    : null
+  const passCount = completedAtts.filter((a: any) => a.passed).length
+  const hasOpenQs = (questions ?? []).some((q: any) => ['short_answer', 'essay'].includes(q.q_type))
+  const st        = getEvalStatus({ status: ev.status, available_until: ev.available_until })
+
+  const BADGE: Record<string, 'purple' | 'green' | 'amber' | 'gray' | 'blue'> = {
+    active: 'purple', upcoming: 'amber', closed: 'green', draft: 'gray', published: 'blue',
+  }
 
   return (
-    <div className="flex h-screen flex-col bg-gray-50">
+    <div className="flex flex-1 flex-col overflow-hidden">
+      <TopBar
+        title={ev.title}
+        subtitle={`${EVAL_TYPE_LABEL[ev.eval_type]} · ${ev.cefr_levels?.code ?? 'Sin nivel'}`}
+        actions={
+          <div className="flex gap-2">
+            <Badge variant={BADGE[st] ?? 'gray'}>{EVAL_STATUS_LABEL[st]}</Badge>
+            <a href={`/teacher/evaluations/${id}/assets`} className="btn-outline text-sm">
+              📎 Archivos
+            </a>
+            <DeleteEvaluationButton evalId={id} status={ev.status} title={ev.title} backHref="/teacher/evaluations" />
+          </div>
+        }
+      />
 
-      {/* Header fijo */}
-      <header className="flex h-14 flex-shrink-0 items-center justify-between border-b border-gray-200 bg-white px-6">
-        <div className="flex items-center gap-3">
-          <button onClick={() => router.back()} className="text-gray-400 hover:text-gray-600">
-            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.7} className="h-5 w-5">
-              <path d="M12 4L6 10l6 6"/>
-            </svg>
-          </button>
-          <div>
-            <h1 className="text-sm font-semibold text-gray-900">
-              Corrección — {attempt.evaluations?.title}
-            </h1>
-            <p className="text-xs text-gray-400">
-              {student?.first_name} {student?.last_name} · {student?.email}
+      <main className="flex-1 overflow-y-auto p-6 space-y-6">
+
+        {/* Stats row */}
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+          <div className="card-sm text-center">
+            <p className="text-2xl font-semibold text-gray-900">{(attempts ?? []).length}</p>
+            <p className="text-xs text-gray-500">Intentos totales</p>
+          </div>
+          <div className="card-sm text-center">
+            <p className="text-2xl font-semibold text-gray-900">{completedAtts.length}</p>
+            <p className="text-xs text-gray-500">Completados</p>
+          </div>
+          <div className="card-sm text-center">
+            <p className={`text-2xl font-semibold ${avgScore !== null && avgScore >= 60 ? 'text-green-700' : 'text-red-600'}`}>
+              {avgScore !== null ? `${avgScore}%` : '—'}
             </p>
+            <p className="text-xs text-gray-500">Promedio</p>
+          </div>
+          <div className="card-sm text-center">
+            <p className="text-2xl font-semibold text-green-700">{passCount}</p>
+            <p className="text-xs text-gray-500">Aprobados</p>
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
-          <div className="hidden sm:flex items-center gap-2">
-            <ScoreBar score={previewScore} />
-            <Badge variant={previewScore >= passScore ? 'green' : 'red'}>
-              {previewScore >= passScore ? 'Aprueba' : 'No aprueba'}
-            </Badge>
-          </div>
-          <button
-            onClick={() => handleSave(false)}
-            disabled={saving}
-            className="btn-outline text-xs py-1.5"
-          >
-            Guardar borrador
-          </button>
-          <button
-            onClick={() => handleSave(true)}
-            disabled={saving}
-            className="btn-brand text-xs py-1.5"
-          >
-            {saving ? 'Guardando…' : 'Finalizar corrección'}
-          </button>
-        </div>
-      </header>
-
-      {/* Banner de error visible */}
-      {saveError && (
-        <div className="bg-red-50 border-b border-red-200 px-6 py-2 flex items-center justify-between">
-          <p className="text-sm text-red-700">⚠ {saveError}</p>
-          <button onClick={() => setSaveError(null)} className="text-red-400 hover:text-red-600 text-xs">
-            Cerrar
-          </button>
-        </div>
-      )}
-
-      <div className="flex-1 overflow-y-auto p-6">
-        <div className="mx-auto max-w-2xl space-y-4">
-
-          {/* Radar del alumno */}
-          {studentId && (
-            <div className="card">
-              <div className="flex items-center justify-between mb-3">
-                <div>
-                  <p className="text-sm font-semibold text-gray-900">
-                    Radar de habilidades — {attempt?.profiles?.first_name} {attempt?.profiles?.last_name}
-                  </p>
-                  <p className="text-xs text-gray-400 mt-0.5">
-                    Rendimiento acumulado en todas las evaluaciones
-                  </p>
-                </div>
-                <a href="/results/radar" className="text-xs text-purple-600 hover:underline">
-                  Ver completo →
-                </a>
+        {/* Info card */}
+        <div className="card">
+          <h2 className="mb-3 text-sm font-semibold text-gray-900">Configuración</h2>
+          <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-4">
+            {[
+              { label: 'Tipo',          value: EVAL_TYPE_LABEL[ev.eval_type] },
+              { label: 'Nivel',         value: ev.cefr_levels?.code ?? '—' },
+              { label: 'Tiempo límite', value: ev.time_limit_min ? `${ev.time_limit_min} min` : 'Sin límite' },
+              { label: 'Aprobación',    value: `${ev.pass_score}%` },
+              { label: 'Disponible',    value: formatDate(ev.available_from) },
+              { label: 'Vence',         value: formatDate(ev.available_until) },
+              { label: 'Preguntas',     value: (questions ?? []).length },
+              { label: 'Max intentos',  value: ev.max_attempts },
+            ].map(({ label, value }) => (
+              <div key={label}>
+                <p className="text-xs text-gray-400">{label}</p>
+                <p className="font-medium text-gray-900">{String(value)}</p>
               </div>
-              <StudentRadarCard
-                studentId={studentId}
-                studentName={`${attempt?.profiles?.first_name} ${attempt?.profiles?.last_name}`}
-                compact={true}
-              />
+            ))}
+          </div>
+          {ev.instructions && (
+            <div className="mt-4 rounded-lg bg-blue-50 border border-blue-100 px-3 py-2.5">
+              <p className="text-xs text-blue-700 leading-relaxed">{ev.instructions}</p>
             </div>
           )}
-
-          {/* Respuestas */}
-          {answers.map((ans, idx) => {
-            const q      = ans.questions
-            const isObj  = ['multiple_choice', 'true_false'].includes(q.q_type)
-            const isOpen = ['short_answer', 'essay'].includes(q.q_type)
-
-            return (
-              <div key={ans.id} className="card">
-                <div className="flex items-start justify-between gap-3 mb-3">
-                  <div className="flex items-center gap-2">
-                    <span
-                      className="flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold text-white flex-shrink-0"
-                      style={{ background: '#642f8d' }}
-                    >
-                      {idx + 1}
-                    </span>
-                    <span className="text-xs font-medium text-gray-500">
-                      {isObj ? 'Objetiva' : isOpen ? 'Respuesta abierta' : q.q_type}
-                      · {q.points} pt{q.points !== 1 ? 's' : ''}
-                    </span>
-                  </div>
-                  {isObj && (
-                    <Badge variant={ans.is_correct ? 'green' : 'red'}>
-                      {ans.is_correct ? 'Correcta' : 'Incorrecta'} · {ans.points_earned} pts
-                    </Badge>
-                  )}
-                </div>
-
-                <p className="text-sm font-medium text-gray-900 mb-3 leading-relaxed">{q.body}</p>
-
-                {/* Objetiva — opciones */}
-                {isObj && q.options && (
-                  <div className="space-y-1.5 mb-3">
-                    {q.options.map(opt => {
-                      const isSelected = ans.option_id === opt.id
-                      const color = opt.is_correct
-                        ? 'border-green-300 bg-green-50'
-                        : isSelected && !opt.is_correct
-                          ? 'border-red-300 bg-red-50'
-                          : 'border-gray-200 bg-gray-50'
-                      return (
-                        <div key={opt.id} className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm ${color}`}>
-                          <span className={`text-xs font-medium ${
-                            opt.is_correct ? 'text-green-700' : isSelected ? 'text-red-700' : 'text-gray-400'
-                          }`}>
-                            {opt.is_correct ? '✓' : isSelected ? '✕' : '·'}
-                          </span>
-                          <span className={
-                            opt.is_correct ? 'text-green-800' : isSelected ? 'text-red-800' : 'text-gray-600'
-                          }>
-                            {opt.body}
-                          </span>
-                          {isSelected && !opt.is_correct && (
-                            <span className="ml-auto text-xs text-red-600">Respuesta del alumno</span>
-                          )}
-                          {opt.is_correct && (
-                            <span className="ml-auto text-xs text-green-700">Correcta</span>
-                          )}
-                        </div>
-                      )
-                    })}
-                  </div>
-                )}
-
-                {/* Abierta — respuesta + puntos */}
-                {isOpen && (
-                  <div className="space-y-3">
-                    <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5">
-                      <p className="text-[10px] font-medium text-gray-400 mb-1 uppercase tracking-wide">
-                        Respuesta del alumno
-                      </p>
-                      <p className="text-sm text-gray-800 leading-relaxed whitespace-pre-wrap">
-                        {ans.text_answer || (
-                          <span className="italic text-gray-400">Sin respuesta</span>
-                        )}
-                      </p>
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="label">Puntos asignados (máx. {q.points})</label>
-                        <input
-                          type="number"
-                          min={0}
-                          max={q.points}
-                          step={0.5}
-                          value={points[ans.id] ?? 0}
-                          onChange={e => setPoints(prev => ({
-                            ...prev,
-                            [ans.id]: Math.min(Math.max(parseFloat(e.target.value) || 0, 0), q.points),
-                          }))}
-                          className="input"
-                        />
-                      </div>
-                      <div>
-                        <label className="label">Nota al alumno (opcional)</label>
-                        <input
-                          type="text"
-                          value={notes[ans.id] ?? ''}
-                          onChange={e => setNotes(prev => ({ ...prev, [ans.id]: e.target.value }))}
-                          placeholder="Ej: Good attempt, but…"
-                          className="input"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )
-          })}
-
-          {/* Feedback general */}
-          <div className="card">
-            <label className="label text-sm font-semibold text-gray-900 mb-2 block">
-              Feedback general al alumno
-            </label>
-            <textarea
-              rows={3}
-              value={feedback}
-              onChange={e => setFeedback(e.target.value)}
-              placeholder="Escribí un comentario general sobre el desempeño del alumno…"
-              className="textarea"
-            />
-          </div>
-
-          {/* Score preview */}
-          <div className="card flex items-center justify-between">
-            <div>
-              <p className="text-sm font-semibold text-gray-900">Score calculado</p>
-              <p className="text-xs text-gray-400">{earnedPts.toFixed(1)} / {totalPts} puntos</p>
-            </div>
-            <div className="flex items-center gap-3">
-              <ScoreBar score={previewScore} />
-              <Badge variant={previewScore >= passScore ? 'green' : 'red'}>
-                {previewScore >= passScore ? 'Aprobado' : 'Desaprobado'}
-              </Badge>
-            </div>
-          </div>
-
-          <div className="flex gap-3 justify-end pb-6">
-            <button onClick={() => handleSave(false)} disabled={saving} className="btn-outline">
-              Guardar borrador
-            </button>
-            <button onClick={() => handleSave(true)} disabled={saving} className="btn-brand px-6">
-              {saving ? 'Guardando…' : 'Finalizar corrección ✓'}
-            </button>
-          </div>
-
         </div>
-      </div>
+
+        {/* Pending grading alert */}
+        {hasOpenQs && pendingGrade.length > 0 && (
+          <AlertBanner type="warn">
+            <strong>{pendingGrade.length} intento{pendingGrade.length > 1 ? 's' : ''}</strong> con respuestas abiertas pendientes de corrección manual.
+          </AlertBanner>
+        )}
+
+        {/* Cursos asignados */}
+        <div className="card">
+          <h2 className="text-sm font-semibold text-gray-900 mb-3">Cursos asignados</h2>
+          {!assignedCourses || assignedCourses.length === 0 ? (
+            <div className="flex items-center gap-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5">
+              <span>⚠️</span>
+              <span>Esta evaluación no está asignada a ningún curso. Los alumnos no pueden verla.</span>
+            </div>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {(assignedCourses ?? []).map((ec: any) => {
+                const course = ec.courses
+                if (!course) return null
+                return (
+                  <span key={course.id}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-gray-200 text-sm font-medium text-gray-700">
+                    {course.cefr_levels?.code && (
+                      <span className={`cefr-pill cefr-${course.cefr_levels.code} text-[10px] py-0`}>
+                        {course.cefr_levels.code}
+                      </span>
+                    )}
+                    {course.name}
+                  </span>
+                )
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Attempts table */}
+        <div className="card p-0 overflow-hidden">
+          <div className="px-5 py-4 border-b border-gray-100">
+            <h2 className="text-sm font-semibold text-gray-900">Intentos de alumnos</h2>
+          </div>
+          {(attempts ?? []).length === 0 ? (
+            <div className="py-12 text-center text-sm text-gray-400">Ningún alumno ha rendido esta evaluación aún.</div>
+          ) : (
+            <table className="table-base">
+              <thead>
+                <tr>
+                  <th>Alumno</th>
+                  <th>Inicio</th>
+                  <th>Duración</th>
+                  <th>Score</th>
+                  <th>Estado</th>
+                  <th>Corrección</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(attempts ?? []).map((att: any) => {
+                  const student = att.profiles
+                  return (
+                    <tr key={att.id}>
+                      <td>
+                        <div className="flex items-center gap-2">
+                          <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white" style={{ background: '#642f8d' }}>
+                            {`${student?.first_name?.[0] ?? ''}${student?.last_name?.[0] ?? ''}`.toUpperCase()}
+                          </div>
+                          <div>
+                            <p className="text-sm font-medium text-gray-900">{student?.first_name} {student?.last_name}</p>
+                            <p className="text-xs text-gray-400">{student?.email}</p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="text-gray-600 text-xs">{formatDateTime(att.started_at)}</td>
+                      <td className="text-gray-600">{formatDuration(att.time_taken_sec)}</td>
+                      <td>
+                        {att.score != null
+                          ? <ScoreBar score={att.score} />
+                          : <span className="text-gray-400 text-sm">—</span>
+                        }
+                      </td>
+                      <td>
+                        <Badge variant={
+                          att.status === 'graded'      ? 'green' :
+                          att.status === 'submitted'   ? 'amber' :
+                          att.status === 'in_progress' ? 'blue'  : 'gray'
+                        }>
+                          {ATTEMPT_STATUS_LABEL[att.status as keyof typeof ATTEMPT_STATUS_LABEL] ?? att.status}
+                        </Badge>
+                      </td>
+                      <td>
+                        {att.status === 'submitted' ? (
+                          <a href={`/teacher/results/${att.id}`} className="text-xs font-medium" style={{ color: '#642f8d' }}>
+                            Corregir →
+                          </a>
+                        ) : att.status === 'graded' ? (
+                          <a href={`/teacher/results/${att.id}`} className="text-xs text-gray-400 hover:text-gray-600">
+                            Ver detalle
+                          </a>
+                        ) : (
+                          <span className="text-xs text-gray-300">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+      </main>
     </div>
   )
 }

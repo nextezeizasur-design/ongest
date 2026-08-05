@@ -161,6 +161,7 @@ export interface EvaluationStats {
   eval_type: EvalType
   status: EvalStatus
   time_limit_min?: number
+  available_from?: string
   available_until?: string
   pass_score: number
   cefr_code?: CefrCode

@@ -151,7 +151,7 @@ export default async function TeacherEvaluationDetail({
     : null
   const passCount = completedAtts.filter((a: any) => a.passed).length
   const hasOpenQs = (questions ?? []).some((q: any) => ['short_answer', 'essay'].includes(q.q_type))
-  const st        = getEvalStatus({ status: ev.status, available_until: ev.available_until })
+  const st        = getEvalStatus({ status: ev.status, available_from: ev.available_from, available_until: ev.available_until })
 
   const BADGE: Record<string, 'purple' | 'green' | 'amber' | 'gray' | 'blue'> = {
     active: 'purple', upcoming: 'amber', closed: 'green', draft: 'gray', published: 'blue',

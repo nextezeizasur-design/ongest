@@ -73,7 +73,7 @@ export default async function TeacherEvaluations() {
               </thead>
               <tbody>
                 {filtered.map((ev: any) => {
-                  const st = getEvalStatus({ status: ev.status, available_until: ev.available_until })
+                  const st = getEvalStatus({ status: ev.status, available_from: ev.available_from, available_until: ev.available_until })
                   return (
                     <tr key={ev.id}>
                       <td>

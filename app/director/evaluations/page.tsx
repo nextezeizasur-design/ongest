@@ -18,7 +18,7 @@ export default async function DirectorEvaluations({
   const { data: all } = await getEvaluationStats(profile.organization_id)
 
   const filtered = sp.status
-    ? all.filter(e => getEvalStatus({ status: e.status, available_until: e.available_until }) === sp.status)
+    ? all.filter(e => getEvalStatus({ status: e.status, available_from: e.available_from, available_until: e.available_until }) === sp.status)
     : all
 
   const statuses = ['active', 'upcoming', 'closed', 'draft'] as const
@@ -42,7 +42,7 @@ export default async function DirectorEvaluations({
             Todas ({all.length})
           </a>
           {statuses.map(st => {
-            const count = all.filter(e => getEvalStatus({ status: e.status, available_until: e.available_until }) === st).length
+            const count = all.filter(e => getEvalStatus({ status: e.status, available_from: e.available_from, available_until: e.available_until }) === st).length
             return (
               <a key={st} href={`/director/evaluations?status=${st}`}
                 className="rounded-full px-3 py-1 text-xs font-medium transition-colors"
@@ -77,7 +77,7 @@ export default async function DirectorEvaluations({
               </thead>
               <tbody>
                 {filtered.map(ev => {
-                  const st = getEvalStatus({ status: ev.status, available_until: ev.available_until })
+                  const st = getEvalStatus({ status: ev.status, available_from: ev.available_from, available_until: ev.available_until })
                   const completionPct = ev.unique_students > 0
                     ? Math.round((ev.completed_count / ev.unique_students) * 100)
                     : 0

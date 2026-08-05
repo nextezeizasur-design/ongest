@@ -39,7 +39,7 @@ export default async function CoordinatorEvaluations() {
               </thead>
               <tbody>
                 {evals.map(ev => {
-                  const st = getEvalStatus({ status: ev.status, available_until: ev.available_until })
+                  const st = getEvalStatus({ status: ev.status, available_from: ev.available_from, available_until: ev.available_until })
                   return (
                     <tr key={ev.id}>
                       <td><p className="font-medium text-gray-900">{ev.title}</p></td>

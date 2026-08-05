@@ -164,6 +164,7 @@ export interface EvaluationStats {
   available_from?: string
   available_until?: string
   pass_score: number
+  created_at?: string
   cefr_code?: CefrCode
   created_by_name?: string
   completed_count: number

@@ -48,7 +48,7 @@ export default async function DirectorEvaluationDetail({
   const notStartedYet = availFrom ? availFrom > now : false
   const attemptCount  = (attempts ?? []).filter((a: any) => ['submitted','graded','in_progress'].includes(a.status)).length
   const canEdit       = ev.status === 'draft' || (ev.status === 'published' && notStartedYet && attemptCount === 0)
-  const st            = getEvalStatus({ status: ev.status, available_until: ev.available_until })
+  const st            = getEvalStatus({ status: ev.status, available_from: ev.available_from, available_until: ev.available_until })
   const completedAtts = (attempts ?? []).filter((a: any) => ['submitted','graded'].includes(a.status))
   const pendingGrade  = completedAtts.filter((a: any) => a.status === 'submitted')
   const avgScore      = completedAtts.length

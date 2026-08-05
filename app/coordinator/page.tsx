@@ -24,7 +24,7 @@ export default async function CoordinatorDashboard() {
     getStudentStats(orgId),
   ])
 
-  const active    = evals.filter(e => getEvalStatus({ status: e.status, available_until: e.available_until }) === 'active').length
+  const active    = evals.filter(e => getEvalStatus({ status: e.status, available_from: e.available_from, available_until: e.available_until }) === 'active').length
   const pending   = evals.filter(e => e.in_progress_count > 0).reduce((a, e) => a + e.in_progress_count, 0)
   const atRisk    = students.filter(s => (s.avg_score ?? 100) < 60 && s.total_attempts > 0).length
   const recentEvals = evals.slice(0, 6)
@@ -144,7 +144,7 @@ export default async function CoordinatorDashboard() {
           </div>
           <div className="space-y-3">
             {recentEvals.map(ev => {
-              const st = getEvalStatus({ status: ev.status, available_until: ev.available_until })
+              const st = getEvalStatus({ status: ev.status, available_from: ev.available_from, available_until: ev.available_until })
               return (
                 <div key={ev.id} className="flex items-center gap-3">
                   <div className="min-w-0 flex-1">

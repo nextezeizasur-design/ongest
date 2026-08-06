@@ -640,15 +640,23 @@ export default function NewEvaluationPage() {
               <div className="border-2 border-purple-200 rounded-2xl bg-purple-50/20 p-4">
                 <ExerciseEditor
                   onAdd={(qs, instruction) => {
-                    const drafted: QuestionDraft[] = qs.map(q => ({
-                      id:      genId(),
-                      q_type:  q.q_type as QuestionType,
-                      body:    q.body,
-                      points:  q.points,
-                      skill:   (q as any).skill || 'grammar',
-                      options: q.options.map(o => ({ id: genId(), body: o.body, is_correct: o.is_correct })),
-                      expected_answer: q.explanation || undefined,
-                    }))
+                    // La consigna general del ejercicio se antepone a la primera pregunta
+                    // del grupo (mismo criterio que el importador de PDF) para que no se
+                    // pierda: la tabla questions no tiene columna instruction propia.
+                    const drafted: QuestionDraft[] = qs.map((q, i) => {
+                      const fullBody = (instruction.trim() && i === 0)
+                        ? `📌 ${instruction.trim()}\n\n${q.body}`
+                        : q.body
+                      return {
+                        id:      genId(),
+                        q_type:  q.q_type as QuestionType,
+                        body:    fullBody,
+                        points:  q.points,
+                        skill:   (q as any).skill || 'grammar',
+                        options: q.options.map(o => ({ id: genId(), body: o.body, is_correct: o.is_correct })),
+                        expected_answer: q.explanation || undefined,
+                      }
+                    })
                     setQuestions(prev => [...prev, ...drafted])
                     setShowExercise(false)
                   }}

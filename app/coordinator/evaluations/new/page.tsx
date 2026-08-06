@@ -21,6 +21,8 @@ interface QuestionDraft {
   expected_answer?: string
   keywords?: string
   speaking_time_sec?: number
+  instruction?: string   // consigna general del bloque — solo vive en el primer ítem del grupo
+  groupId?: string       // agrupa preguntas creadas juntas por el editor de ejercicios
 }
 
 // Pregunta importada desde PDF (antes de convertir a QuestionDraft)
@@ -292,11 +294,17 @@ export default function NewEvaluationPage() {
     let questionErrors = 0
     for (let i = 0; i < questions.length; i++) {
       const q = questions[i]
+      // La consigna del bloque (si existe) se antepone al body recién acá, al persistir —
+      // el editor la muestra separada, pero la tabla questions no tiene columna propia
+      // para guardarla, así que viaja embebida en el enunciado de la primera pregunta.
+      const bodyToSave = q.instruction?.trim()
+        ? `📌 ${q.instruction.trim()}\n\n${q.body.trim()}`
+        : q.body.trim()
       const { data: savedQ, error: qErr } = await sb.from('questions').insert({
         evaluation_id:     ev.id,
         sort_order:        i + 1,
         q_type:            q.q_type,
-        body:              q.body.trim(),
+        body:              bodyToSave,
         points:            q.points,
         skill:             q.skill || 'grammar',
         expected_answer:   q.expected_answer || null,
@@ -337,6 +345,22 @@ export default function NewEvaluationPage() {
   }
 
   const importCheckedCount = importedQs?.filter(q => q._checked).length ?? 0
+
+  // Agrupar preguntas creadas juntas por el editor de ejercicios (mismo groupId)
+  // para mostrar la consigna general una sola vez por bloque, no repetida/perdida
+  // en cada pregunta individual.
+  const idxOf = new Map(questions.map((q, i) => [q.id, i]))
+  const questionBlocks: { groupId: string | null; items: QuestionDraft[] }[] = []
+  const seenGroups = new Set<string>()
+  for (const q of questions) {
+    if (q.groupId) {
+      if (seenGroups.has(q.groupId)) continue
+      seenGroups.add(q.groupId)
+      questionBlocks.push({ groupId: q.groupId, items: questions.filter(x => x.groupId === q.groupId) })
+    } else {
+      questionBlocks.push({ groupId: null, items: [q] })
+    }
+  }
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
@@ -501,7 +525,34 @@ export default function NewEvaluationPage() {
               <h2 className="text-sm font-semibold text-gray-900">Preguntas ({questions.length})</h2>
             </div>
 
-            {questions.map((q, idx) => (
+            {questionBlocks.map(block => (
+              <div
+                key={block.groupId ?? block.items[0].id}
+                className={block.groupId && block.items.length > 1
+                  ? 'rounded-2xl border-2 border-purple-200 bg-purple-50/30 p-3 space-y-3'
+                  : 'contents'}
+              >
+                {/* Consigna del bloque — una sola vez, aplica a todas las preguntas de abajo */}
+                {block.groupId && block.items[0].instruction !== undefined && (
+                  <div className="rounded-xl border border-purple-300 bg-white px-3 py-2 flex items-start gap-2">
+                    <span className="text-base leading-none mt-0.5">📌</span>
+                    <div className="flex-1">
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-purple-600 mb-1">
+                        Consigna del bloque — aplica a {block.items.length} pregunta{block.items.length !== 1 ? 's' : ''} de abajo
+                      </p>
+                      <textarea
+                        rows={2}
+                        value={block.items[0].instruction}
+                        onChange={e => updateQuestion(block.items[0].id, { instruction: e.target.value })}
+                        className="w-full text-sm text-purple-900 bg-transparent border-0 resize-none focus:outline-none focus:ring-1 focus:ring-purple-200 rounded px-1 -mx-1"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {block.items.map(q => {
+                  const idx = idxOf.get(q.id)!
+                  return (
               <div key={q.id} className="card space-y-3">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-center gap-2">
@@ -608,6 +659,9 @@ export default function NewEvaluationPage() {
                   </div>
                 )}
               </div>
+                  )
+                })}
+              </div>
             ))}
 
             {/* ── Barra de botones ── */}
@@ -640,23 +694,23 @@ export default function NewEvaluationPage() {
               <div className="border-2 border-purple-200 rounded-2xl bg-purple-50/20 p-4">
                 <ExerciseEditor
                   onAdd={(qs, instruction) => {
-                    // La consigna general del ejercicio se antepone a la primera pregunta
-                    // del grupo (mismo criterio que el importador de PDF) para que no se
-                    // pierda: la tabla questions no tiene columna instruction propia.
-                    const drafted: QuestionDraft[] = qs.map((q, i) => {
-                      const fullBody = (instruction.trim() && i === 0)
-                        ? `📌 ${instruction.trim()}\n\n${q.body}`
-                        : q.body
-                      return {
-                        id:      genId(),
-                        q_type:  q.q_type as QuestionType,
-                        body:    fullBody,
-                        points:  q.points,
-                        skill:   (q as any).skill || 'grammar',
-                        options: q.options.map(o => ({ id: genId(), body: o.body, is_correct: o.is_correct })),
-                        expected_answer: q.explanation || undefined,
-                      }
-                    })
+                    // Todas las preguntas de este ejercicio comparten groupId para poder
+                    // mostrarse agrupadas visualmente. La consigna se guarda una sola vez,
+                    // en el primer ítem del grupo, como campo propio (no mezclada en el body)
+                    // para que quede claro que aplica a todo el bloque.
+                    const groupId = genId()
+                    const trimmedInstruction = instruction.trim()
+                    const drafted: QuestionDraft[] = qs.map((q, i) => ({
+                      id:      genId(),
+                      q_type:  q.q_type as QuestionType,
+                      body:    q.body,
+                      points:  q.points,
+                      skill:   (q as any).skill || 'grammar',
+                      options: q.options.map(o => ({ id: genId(), body: o.body, is_correct: o.is_correct })),
+                      expected_answer: q.explanation || undefined,
+                      groupId,
+                      instruction: (trimmedInstruction && i === 0) ? trimmedInstruction : undefined,
+                    }))
                     setQuestions(prev => [...prev, ...drafted])
                     setShowExercise(false)
                   }}

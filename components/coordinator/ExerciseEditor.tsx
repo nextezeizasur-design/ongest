@@ -14,6 +14,7 @@ export type ExerciseType =
   | 'underline'    // Underline/Choose the correct word  (A / B inline)
   | 'error'        // Find the error and correct it
   | 'complete'     // Complete the sentences
+  | 'passive'      // Active → Passive transformation (texto de referencia)
   | 'writing'      // Free writing prompt
   | 'reading'      // Texto + preguntas de comprensión
   | 'listening'    // Audio + consigna + preguntas T/F o múltiple opción
@@ -49,6 +50,7 @@ const EXERCISE_TYPES: { type: ExerciseType; label: string; icon: string; desc: s
   { type: 'underline', icon: '✏️', label: 'Choose/Underline', desc: 'Elegir la palabra correcta entre dos opciones' },
   { type: 'error',     icon: '🔍', label: 'Find the error', desc: 'Encontrar y corregir el error en cada oración' },
   { type: 'complete',  icon: '✍️', label: 'Complete',       desc: 'Completar oraciones con la palabra correcta' },
+  { type: 'passive',   icon: '🔄', label: 'Active → Passive', desc: 'Transformar oraciones activas a pasivas usando un texto de referencia' },
   { type: 'writing',   icon: '📝', label: 'Writing',        desc: 'Redacción libre con guías o preguntas orientadoras' },
   { type: 'reading',   icon: '📖', label: 'Reading',        desc: 'Texto de lectura con párrafos y preguntas de comprensión opcionales' },
   { type: 'listening',  icon: '🎧', label: 'Listening',      desc: 'Audio con consigna y preguntas de comprensión auditiva' },
@@ -68,6 +70,7 @@ const DEFAULT_INSTRUCTIONS: Record<ExerciseType, string> = {
   underline: 'Underline the correct word in italics in each sentence.',
   error:     'For each sentence (1–10), find the error and correct it.',
   complete:  'Complete the sentences with the correct word.',
+  passive:   'Convert the following sentences from active to passive voice.',
   writing:   'Write a short paragraph. Use the questions below as a guide.',
   reading:   'Read the text.',
   listening: 'Listen to the audio and answer the questions.',
@@ -79,6 +82,7 @@ const DEFAULT_SKILL: Record<ExerciseType, string> = {
   underline: 'grammar',
   error:     'grammar',
   complete:  'vocabulary',
+  passive:   'grammar',
   writing:   'writing',
   reading:   'reading',
   listening: 'listening',
@@ -105,6 +109,15 @@ export default function ExerciseEditor({ onAdd, onCancel }: ExerciseEditorProps)
     { id: uid(), body: '', answer: '' },
     { id: uid(), body: '', answer: '' },
     { id: uid(), body: '', answer: '' },
+  ])
+
+  // Active → Passive — oración activa + sujeto pasivo + resto (agente/complementos) + respuesta
+  const [passiveItems, setPassiveItems] = useState<{
+    id: string; active: string; subject: string; rest: string; answer: string
+  }[]>([
+    { id: uid(), active: '', subject: '', rest: '', answer: '' },
+    { id: uid(), active: '', subject: '', rest: '', answer: '' },
+    { id: uid(), active: '', subject: '', rest: '', answer: '' },
   ])
 
   // Underline — cada ítem tiene dos opciones inline
@@ -322,6 +335,24 @@ export default function ExerciseEditor({ onAdd, onCancel }: ExerciseEditorProps)
           })
       }
 
+      case 'passive': {
+        const BLANK = '_'.repeat(32)
+        return passiveItems
+          .filter(it => it.active.trim() && it.subject.trim())
+          .map(it => {
+            const passiveLine = [it.subject.trim(), BLANK, it.rest.trim()].filter(Boolean).join(' ')
+            return {
+              id:          uid(),
+              body:        `Active: ${it.active.trim()}\nPassive: ${passiveLine}`,
+              options:     [],
+              q_type:      'short_answer' as const,
+              skill,
+              points,
+              explanation: it.answer.trim(),
+            }
+          })
+      }
+
       default: {
         // order, error, complete
         return simpleItems
@@ -386,6 +417,7 @@ export default function ExerciseEditor({ onAdd, onCancel }: ExerciseEditorProps)
     : exType === 'underline' ? underlineItems.filter(i => i.opt1.trim() && i.opt2.trim()).length
     : exType === 'reading' ? (readingHasQuestions ? readingQuestions.filter(q => q.body.trim()).length : 1)
     : exType === 'listening' ? listeningQuestions.filter(q => q.body.trim()).length
+    : exType === 'passive' ? passiveItems.filter(i => i.active.trim() && i.subject.trim()).length
     : simpleItems.filter(i => i.body.trim()).length
 
   return (
@@ -705,6 +737,72 @@ export default function ExerciseEditor({ onAdd, onCancel }: ExerciseEditorProps)
           ))}
           <button
             onClick={() => setSimpleItems(prev => [...prev, { id: uid(), body: '', answer: '' }])}
+            className="text-xs text-purple-600 hover:text-purple-800"
+          >
+            + Agregar ítem
+          </button>
+        </div>
+      )}
+
+      {/* ACTIVE → PASSIVE — oración activa + sujeto pasivo + resto + respuesta, con vista previa */}
+      {exType === 'passive' && (
+        <div className="space-y-3">
+          {passiveItems.map((it, i) => {
+            const preview = it.subject.trim()
+              ? `${it.subject.trim()} ${'_'.repeat(24)}${it.rest.trim() ? ' ' + it.rest.trim() : ''}`
+              : ''
+            return (
+              <div key={it.id} className="rounded-xl border border-gray-200 p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-gray-500">Ítem {i + 1}</span>
+                  <button onClick={() => setPassiveItems(prev => prev.filter((_, j) => j !== i))}
+                    disabled={passiveItems.length <= 1}
+                    className="text-gray-300 hover:text-red-500 disabled:opacity-20">
+                    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.5} className="h-4 w-4">
+                      <path d="M3 4h10M6 4V2h4v2M5 4v9h6V4"/>
+                    </svg>
+                  </button>
+                </div>
+
+                <div>
+                  <label className="label text-xs mb-1">Oración activa</label>
+                  <input type="text" value={it.active}
+                    onChange={e => setPassiveItems(prev => prev.map((x, j) => j === i ? { ...x, active: e.target.value } : x))}
+                    placeholder="Ej: PETA sued David Slater in court." className="input text-sm w-full" />
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="label text-xs mb-1">Sujeto en pasiva (antes del blank)</label>
+                    <input type="text" value={it.subject}
+                      onChange={e => setPassiveItems(prev => prev.map((x, j) => j === i ? { ...x, subject: e.target.value } : x))}
+                      placeholder="Ej: David Slater" className="input text-sm w-full" />
+                  </div>
+                  <div>
+                    <label className="label text-xs mb-1">Resto (agente / complementos, después del blank)</label>
+                    <input type="text" value={it.rest}
+                      onChange={e => setPassiveItems(prev => prev.map((x, j) => j === i ? { ...x, rest: e.target.value } : x))}
+                      placeholder="Ej: by PETA in court." className="input text-sm w-full" />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="label text-xs mb-1">Respuesta correcta (referencia del docente)</label>
+                  <input type="text" value={it.answer}
+                    onChange={e => setPassiveItems(prev => prev.map((x, j) => j === i ? { ...x, answer: e.target.value } : x))}
+                    placeholder="Ej: was sued" className="input text-sm w-full" />
+                </div>
+
+                {preview && (
+                  <p className="text-[11px] text-gray-400 italic pt-1 border-t border-gray-100">
+                    Vista previa: Passive: {preview}
+                  </p>
+                )}
+              </div>
+            )
+          })}
+          <button
+            onClick={() => setPassiveItems(prev => [...prev, { id: uid(), active: '', subject: '', rest: '', answer: '' }])}
             className="text-xs text-purple-600 hover:text-purple-800"
           >
             + Agregar ítem

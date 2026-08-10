@@ -10,6 +10,8 @@ import Badge from '@/components/ui/Badge'
 import AlertBanner from '@/components/ui/AlertBanner'
 import PublishButton from '@/components/coordinator/PublishButton'
 import DeleteEvaluationButton from '@/components/coordinator/DeleteEvaluationButton'
+import ReopenAttemptButton from '@/components/coordinator/ReopenAttemptButton'
+import MaxAttemptsEditor from '@/components/coordinator/MaxAttemptsEditor'
 import { formatDate, formatDateTime, formatDuration, getEvalStatus, EVAL_STATUS_LABEL, ATTEMPT_STATUS_LABEL, EVAL_TYPE_LABEL } from '@/lib/utils'
 
 export const metadata = { title: 'Evaluación' }
@@ -108,11 +110,14 @@ export default async function DirectorEvaluationDetail({
               { label: 'Disponible',    value: formatDate(ev.available_from)  },
               { label: 'Vence',         value: formatDate(ev.available_until) },
               { label: 'Preguntas',     value: (questions ?? []).length },
-              { label: 'Max intentos',  value: ev.max_attempts },
-            ].map(({ label, value }) => (
+              { label: 'Max intentos',  value: ev.max_attempts, editable: true },
+            ].map(({ label, value, editable }: any) => (
               <div key={label}>
                 <p className="text-xs text-gray-400">{label}</p>
-                <p className="font-medium text-gray-900">{String(value)}</p>
+                {editable
+                  ? <MaxAttemptsEditor evalId={id} value={value} />
+                  : <p className="font-medium text-gray-900">{String(value)}</p>
+                }
               </div>
             ))}
           </div>
@@ -179,6 +184,7 @@ export default async function DirectorEvaluationDetail({
                 <tr>
                   <th>Alumno</th><th>Inicio</th><th>Duración</th><th>Score</th><th>Estado</th>
                   {hasOpenQs && <th>Corrección</th>}
+                  <th>Acciones</th>
                 </tr>
               </thead>
               <tbody>
@@ -215,6 +221,11 @@ export default async function DirectorEvaluationDetail({
                           )}
                         </td>
                       )}
+                      <td>
+                        {att.status !== 'in_progress' && (
+                          <ReopenAttemptButton attemptId={att.id} studentName={`${s?.first_name ?? ''} ${s?.last_name ?? ''}`.trim()} />
+                        )}
+                      </td>
                     </tr>
                   )
                 })}

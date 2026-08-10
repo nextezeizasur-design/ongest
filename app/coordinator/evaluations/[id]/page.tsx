@@ -9,6 +9,8 @@ import { formatDate, formatDateTime, formatScore, formatDuration, getEvalStatus,
 import GradeClient from '@/components/coordinator/GradeClient'
 import PublishButton from '@/components/coordinator/PublishButton'
 import DeleteEvaluationButton from '@/components/coordinator/DeleteEvaluationButton'
+import ReopenAttemptButton from '@/components/coordinator/ReopenAttemptButton'
+import MaxAttemptsEditor from '@/components/coordinator/MaxAttemptsEditor'
 
 export const metadata = { title: 'Evaluación' }
 
@@ -119,11 +121,14 @@ export default async function EvaluationDetail({
               { label: 'Disponible',    value: formatDate(ev.available_from) },
               { label: 'Vence',         value: formatDate(ev.available_until) },
               { label: 'Preguntas',     value: (questions ?? []).length },
-              { label: 'Max intentos',  value: ev.max_attempts },
-            ].map(({ label, value }) => (
+              { label: 'Max intentos',  value: ev.max_attempts, editable: true },
+            ].map(({ label, value, editable }: any) => (
               <div key={label}>
                 <p className="text-xs text-gray-400">{label}</p>
-                <p className="font-medium text-gray-900">{String(value)}</p>
+                {editable
+                  ? <MaxAttemptsEditor evalId={id} value={value} />
+                  : <p className="font-medium text-gray-900">{String(value)}</p>
+                }
               </div>
             ))}
           </div>
@@ -192,6 +197,7 @@ export default async function EvaluationDetail({
                   <th>Score</th>
                   <th>Estado</th>
                   {hasOpenQs && <th>Corrección</th>}
+                  <th>Acciones</th>
                 </tr>
               </thead>
               <tbody>
@@ -240,6 +246,11 @@ export default async function EvaluationDetail({
                           ) : null}
                         </td>
                       )}
+                      <td>
+                        {att.status !== 'in_progress' && (
+                          <ReopenAttemptButton attemptId={att.id} studentName={`${student?.first_name ?? ''} ${student?.last_name ?? ''}`.trim()} />
+                        )}
+                      </td>
                     </tr>
                   )
                 })}

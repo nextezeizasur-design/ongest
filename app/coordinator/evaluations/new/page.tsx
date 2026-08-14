@@ -292,6 +292,7 @@ export default function NewEvaluationPage() {
     }
 
     let questionErrors = 0
+    let lastQErrMsg = ''
     for (let i = 0; i < questions.length; i++) {
       const q = questions[i]
       // La consigna del bloque (si existe) se antepone al body recién acá, al persistir —
@@ -312,7 +313,12 @@ export default function NewEvaluationPage() {
         speaking_time_sec: q.speaking_time_sec ?? null,
       }).select().single()
 
-      if (qErr || !savedQ) { questionErrors++; continue }
+      if (qErr || !savedQ) {
+        questionErrors++
+        lastQErrMsg = qErr?.message ?? qErr?.code ?? 'sin detalles'
+        console.error(`SUPABASE QUESTION INSERT ERROR (pregunta ${i + 1}, q_type=${q.q_type}):`, JSON.stringify(qErr))
+        continue
+      }
       if (q.options.length > 0) {
         await sb.from('options').insert(
           q.options.map((o: any, oi: number) => ({
@@ -326,7 +332,7 @@ export default function NewEvaluationPage() {
     // Si todas las preguntas fallaron, mostrar error y no redirigir
     if (questionErrors === questions.length) {
       await sb.from('evaluations').delete().eq('id', ev.id)
-      setError('Error al guardar las preguntas. Verificá que todos los tipos de pregunta estén configurados correctamente.')
+      setError(`Error al guardar las preguntas: ${lastQErrMsg}`)
       setSaving(false)
       return
     }

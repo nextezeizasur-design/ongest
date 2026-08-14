@@ -207,7 +207,7 @@ export default function DirectorStudentsClient({ orgId }: { orgId: string }) {
       )}
 
       {/* Stats cards */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4">
         {[
           { label: 'Total',           value: students.length,  active: statusFilter === 'all',     onClick: () => setStatusFilter('all') },
           { label: 'En riesgo',       value: atRisk,           active: statusFilter === 'risk',    onClick: () => setStatusFilter('risk'),    color: 'text-red-600' },
@@ -247,8 +247,8 @@ export default function DirectorStudentsClient({ orgId }: { orgId: string }) {
         <button onClick={openNew} className="btn-brand flex-shrink-0">+ Nuevo alumno</button>
       </div>
 
-      {/* Tabla */}
-      <div className="table-wrap">
+      {/* Tabla — solo desktop */}
+      <div className="table-wrap hidden md:block">
         {loading ? (
           <div className="py-12 text-center text-sm text-gray-400">Cargando…</div>
         ) : filtered.length === 0 ? (
@@ -352,6 +352,95 @@ export default function DirectorStudentsClient({ orgId }: { orgId: string }) {
         )}
       </div>
 
+      {/* Tarjetas — solo mobile */}
+      <div className="md:hidden">
+        {loading ? (
+          <div className="py-12 text-center text-sm text-gray-400">Cargando…</div>
+        ) : filtered.length === 0 ? (
+          <div className="py-12 text-center text-sm text-gray-400">
+            Sin alumnos. <button onClick={openNew} className="font-medium" style={{ color: '#642f8d' }}>Agregar →</button>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {filtered.map(s => {
+              const st = s.total_attempts === 0
+                ? { label: 'Sin rendir', cls: 'badge-gray' }
+                : (s.avg_score ?? 100) < 60
+                ? { label: 'En riesgo',  cls: 'badge-red' }
+                : { label: 'Al día',     cls: 'badge-green' }
+
+              const nuncaIngreso = !s.first_login_at
+
+              return (
+                <div key={s.id} className={`card-sm ${!s.is_active ? 'opacity-50' : ''}`}>
+                  {/* Header: avatar + nombre + estado */}
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <Avatar firstName={s.first_name} lastName={s.last_name} />
+                      <div className="min-w-0">
+                        <p className="font-medium text-gray-900 truncate">{s.first_name} {s.last_name}</p>
+                        <p className="text-xs text-gray-400 truncate">{s.email}</p>
+                      </div>
+                    </div>
+                    <span className={`badge ${st.cls} flex-shrink-0`}>{st.label}</span>
+                  </div>
+
+                  {/* Nivel + Curso */}
+                  <div className="flex items-center gap-2 mt-3 flex-wrap">
+                    {s.cefr_code
+                      ? <span className={`cefr-pill cefr-${s.cefr_code}`}>{s.cefr_code}</span>
+                      : <span className="text-gray-300 text-xs">Sin nivel</span>}
+                    <span className="text-xs text-gray-500 truncate">
+                      {s.course_name ?? <span className="text-amber-600">Sin curso</span>}
+                    </span>
+                  </div>
+
+                  {/* Promedio */}
+                  <div className="flex items-center gap-2 mt-3">
+                    <span className={`text-sm font-bold ${scoreColor(s.avg_score)}`}>
+                      {formatScore(s.avg_score)}
+                    </span>
+                    <div className="score-bar-bg flex-1">
+                      <div className={`score-bar ${scoreBarColor(s.avg_score)}`}
+                        style={{ width: `${s.avg_score ?? 0}%` }} />
+                    </div>
+                  </div>
+
+                  {/* Exámenes + accesos */}
+                  <div className="grid grid-cols-2 gap-2 mt-3 text-xs text-gray-500">
+                    <p>Exámenes: <span className="text-gray-700 font-medium">{s.total_attempts}</span></p>
+                    <p>Aprobados: <span className="text-gray-700 font-medium">{s.passed_count} / {s.total_attempts}</span></p>
+                    <p className="col-span-2">
+                      {nuncaIngreso
+                        ? <span className="text-amber-600 font-medium">Nunca ingresó</span>
+                        : <>Último acceso: <span className="text-gray-700">{formatDateTime(s.last_seen_at)}</span></>
+                      }
+                    </p>
+                  </div>
+
+                  {/* Acciones */}
+                  <div className="flex gap-4 items-center mt-4 pt-3 border-t border-gray-100">
+                    <button
+                      onClick={() => openEdit(s)}
+                      className="text-sm font-medium"
+                      style={{ color: '#642f8d' }}
+                    >
+                      Editar
+                    </button>
+                    <button
+                      onClick={() => toggleActive(s)}
+                      className={`text-sm font-medium ${s.is_active ? 'text-red-500' : 'text-green-600'}`}
+                    >
+                      {s.is_active ? 'Desactivar' : 'Activar'}
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+
       {/* Modal crear / editar */}
       {modal && (
         <div
@@ -421,7 +510,7 @@ export default function DirectorStudentsClient({ orgId }: { orgId: string }) {
               </div>
             ) : (
               <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div>
                     <label className="label">Nombre *</label>
                     <input type="text" value={form.first_name}
@@ -450,7 +539,7 @@ export default function DirectorStudentsClient({ orgId }: { orgId: string }) {
                   )}
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div>
                     <label className="label">Teléfono</label>
                     <input type="text" value={form.phone}

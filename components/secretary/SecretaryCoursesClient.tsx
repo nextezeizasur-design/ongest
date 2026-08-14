@@ -314,7 +314,7 @@ export default function SecretaryCoursesClient({
                 </div>
               )}
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
                   <label className="label">Días de clase</label>
                   <input type="text" value={scheduleDays} onChange={e => setScheduleDays(e.target.value)}

@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import type { RoleName } from '@/types'
@@ -93,6 +93,28 @@ export default function Sidebar({ role, name, email }: SidebarProps) {
 
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
   const [loggingOut, setLoggingOut]               = useState(false)
+  const [mobileOpen, setMobileOpen]                = useState(false)
+
+  // Cierra el drawer mobile automáticamente al navegar a otra sección
+  useEffect(() => {
+    setMobileOpen(false)
+  }, [pathname])
+
+  // Bloquea el scroll del fondo mientras el drawer mobile está abierto
+  useEffect(() => {
+    document.body.style.overflow = mobileOpen ? 'hidden' : ''
+    return () => { document.body.style.overflow = '' }
+  }, [mobileOpen])
+
+  // Permite cerrar el drawer con la tecla Escape
+  useEffect(() => {
+    if (!mobileOpen) return
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') setMobileOpen(false)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [mobileOpen])
 
   async function handleLogout() {
     setLoggingOut(true)
@@ -103,7 +125,21 @@ export default function Sidebar({ role, name, email }: SidebarProps) {
 
   return (
     <>
-      <aside className="flex h-screen w-[220px] flex-col border-r border-gray-200 bg-white flex-shrink-0">
+      {/* Overlay de fondo — solo mobile, mientras el drawer está abierto */}
+      {mobileOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-black/50 md:hidden"
+          onClick={() => setMobileOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+
+      <aside
+        className={`fixed inset-y-0 left-0 z-50 flex h-screen w-[260px] flex-col border-r
+                    border-gray-200 bg-white flex-shrink-0 transition-transform duration-300 ease-in-out
+                    ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}
+                    md:static md:z-auto md:w-[220px] md:translate-x-0 md:transition-none`}
+      >
         {/* Logo */}
         <div className="flex items-center gap-3 border-b border-gray-100 px-4 py-4">
           <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl"
@@ -139,6 +175,7 @@ export default function Sidebar({ role, name, email }: SidebarProps) {
                pathname.startsWith(item.href + '/'))
             return (
               <Link key={item.href} href={item.href}
+                onClick={() => setMobileOpen(false)}
                 className={`nav-link ${active ? 'active' : ''}`}>
                 {item.icon}
                 <span>{item.label}</span>
@@ -153,6 +190,7 @@ export default function Sidebar({ role, name, email }: SidebarProps) {
           {/* Link explícito a Mi perfil */}
           <Link
             href="/profile"
+            onClick={() => setMobileOpen(false)}
             className={`flex items-center gap-2.5 rounded-lg px-2 py-2 text-xs font-medium transition-colors ${
               pathname === '/profile'
                 ? 'text-white'
@@ -187,6 +225,23 @@ export default function Sidebar({ role, name, email }: SidebarProps) {
           </div>
         </div>
       </aside>
+
+      {/* ── Botón flotante para abrir el menú — solo mobile, oculto si el drawer ya está abierto ── */}
+      {!mobileOpen && (
+        <button
+          onClick={() => setMobileOpen(true)}
+          aria-label="Abrir menú de navegación"
+          className="fixed bottom-5 left-5 z-30 flex h-14 w-14 items-center justify-center
+                     rounded-full text-white shadow-lg active:scale-95 transition-transform md:hidden"
+          style={{ background: 'linear-gradient(135deg, #642f8d 0%, #4e2470 100%)' }}
+        >
+          <svg className="h-6 w-6" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.8}>
+            <line x1="3" y1="6" x2="17" y2="6" strokeLinecap="round" />
+            <line x1="3" y1="10" x2="17" y2="10" strokeLinecap="round" />
+            <line x1="3" y1="14" x2="17" y2="14" strokeLinecap="round" />
+          </svg>
+        </button>
+      )}
 
       {/* ── Modal confirmación logout ── */}
       {showLogoutConfirm && (

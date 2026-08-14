@@ -214,7 +214,7 @@ export default function SpeakingReviewer({ evaluationId }: Props) {
           <div className="border-t border-gray-100 pt-4 space-y-3">
             <p className="text-xs text-gray-400 font-medium uppercase tracking-wide">Tu corrección</p>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
                 <label className="label">Puntaje (máx {item.maxPoints})</label>
                 <input

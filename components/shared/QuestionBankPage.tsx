@@ -491,7 +491,7 @@ function ImportPDFModal({ onClose, onImported }: { onClose: () => void; onImport
         <div className="p-5 space-y-4">
           {!parsed ? (
             <>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1.5">Editorial</label>
                   <select value={publisher} onChange={e => setPublisher(e.target.value)}
@@ -749,7 +749,7 @@ function NewBankQuestionModal({
           )}
 
           {/* Clasificación */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Skill</label>
               <select value={skill} onChange={e => setSkill(e.target.value)}
@@ -782,7 +782,7 @@ function NewBankQuestionModal({
           </div>
 
           {/* Topic y explicación */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Tema</label>
               <input type="text" value={topic} onChange={e => setTopic(e.target.value)}
@@ -872,7 +872,7 @@ function EditBankQuestionModal({
               className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400"
             />
           </div>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1.5">Skill</label>
               <select value={skill} onChange={e => setSkill(e.target.value)}

@@ -277,7 +277,7 @@ export default function StudentsClient({ orgId }: { orgId: string }) {
               </div>
             ) : (
               <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div>
                     <label className="label">Nombre *</label>
                     <input type="text" value={form.first_name} onChange={e => setForm(p=>({...p, first_name:e.target.value}))} placeholder="Juan" className="input" />
@@ -299,7 +299,7 @@ export default function StudentsClient({ orgId }: { orgId: string }) {
                   )}
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div>
                     <label className="label">Teléfono</label>
                     <input type="text" value={form.phone} onChange={e => setForm(p=>({...p, phone:e.target.value}))} placeholder="+54 11 1234-5678" className="input" />

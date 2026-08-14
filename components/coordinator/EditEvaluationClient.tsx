@@ -198,7 +198,7 @@ export default function EditEvaluationClient({ evaluation: ev, questions: dbQs, 
               <input type="text" value={title} onChange={e => setTitle(e.target.value)} className="input" placeholder="ej: Grammar Test B1 — Unit 4" />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <label className="label">Nivel CEFR</label>
                 <select value={cefrLevel} onChange={e => setCefrLevel(e.target.value)} className="input">

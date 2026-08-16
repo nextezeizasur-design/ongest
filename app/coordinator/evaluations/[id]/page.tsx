@@ -10,6 +10,7 @@ import GradeClient from '@/components/coordinator/GradeClient'
 import PublishButton from '@/components/coordinator/PublishButton'
 import DeleteEvaluationButton from '@/components/coordinator/DeleteEvaluationButton'
 import ReopenAttemptButton from '@/components/coordinator/ReopenAttemptButton'
+import ExtendAvailabilityButton from '@/components/coordinator/ExtendAvailabilityButton'
 import MaxAttemptsEditor from '@/components/coordinator/MaxAttemptsEditor'
 
 export const metadata = { title: 'Evaluación' }
@@ -119,16 +120,21 @@ export default async function EvaluationDetail({
               { label: 'Tiempo límite', value: ev.time_limit_min ? `${ev.time_limit_min} min` : 'Sin límite' },
               { label: 'Aprobación',    value: `${ev.pass_score}%` },
               { label: 'Disponible',    value: formatDate(ev.available_from) },
-              { label: 'Vence',         value: formatDate(ev.available_until) },
+              { label: 'Vence',         value: formatDate(ev.available_until), extend: true },
               { label: 'Preguntas',     value: (questions ?? []).length },
               { label: 'Max intentos',  value: ev.max_attempts, editable: true },
-            ].map(({ label, value, editable }: any) => (
-              <div key={label}>
+            ].map(({ label, value, editable, extend }: any) => (
+              <div key={label} className={extend ? 'col-span-2' : ''}>
                 <p className="text-xs text-gray-400">{label}</p>
                 {editable
                   ? <MaxAttemptsEditor evalId={id} value={value} />
                   : <p className="font-medium text-gray-900">{String(value)}</p>
                 }
+                {extend && (
+                  <div className="mt-1.5">
+                    <ExtendAvailabilityButton evalId={id} currentUntil={ev.available_until} isClosed={st === 'closed'} />
+                  </div>
+                )}
               </div>
             ))}
           </div>

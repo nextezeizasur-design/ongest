@@ -423,6 +423,15 @@ export async function generateInstitutionalReport(data: InstitutionalReportData)
 
   y += 32
 
+  // Nota aclaratoria: mismo criterio que el resto de la plataforma —
+  // promedio y aprobación se calculan solo sobre evaluaciones ya
+  // corregidas (alumnos con corrección pendiente no cuentan como 0).
+  doc.setFont('helvetica', 'italic')
+  doc.setFontSize(6.5)
+  doc.setTextColor(...hexToRgb(SUBTEXT))
+  doc.text('Promedio y aprobación institucional: solo evaluaciones ya corregidas, histórico completo.', ML, y)
+  y += 8
+
   // ── Rendimiento por nivel CEFR ─────────────────────────
   if (data.by_level.length > 0) {
     doc.setFont('helvetica', 'bold')

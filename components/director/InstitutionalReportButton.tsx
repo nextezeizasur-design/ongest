@@ -32,25 +32,35 @@ export default function InstitutionalReportButton({ organizationId }: Props) {
       const allEvals     = evals ?? []
 
       // ── KPIs institucionales ──
-      const withAttempts = allStudents.filter((s: any) => s.total_attempts > 0)
-      const avgScore = withAttempts.length > 0
-        ? withAttempts.reduce((a: number, s: any) => a + (s.avg_score ?? 0), 0) / withAttempts.length
+      // Importante: avg_score viene de v_student_stats calculado SOLO con
+      // intentos 'graded' (regla unificada con Dashboard/Reportes). Un
+      // alumno con exámenes entregados pero aún sin corregir tiene
+      // total_attempts > 0 pero avg_score = null — no cuenta como un 0,
+      // simplemente todavía no tiene nota. Por eso filtramos por
+      // avg_score != null (alumnos con al menos una corrección real) en
+      // vez de por total_attempts > 0 (que incluye pendientes).
+      const withGradedAttempts = allStudents.filter((s: any) => s.avg_score != null)
+      const avgScore = withGradedAttempts.length > 0
+        ? withGradedAttempts.reduce((a: number, s: any) => a + s.avg_score, 0) / withGradedAttempts.length
         : null
 
-      const totalAttempts = allStudents.reduce((a: number, s: any) => a + (s.total_attempts ?? 0), 0)
-      const totalPassed   = allStudents.reduce((a: number, s: any) => a + (s.passed_count ?? 0), 0)
-      const passRate = totalAttempts > 0 ? (totalPassed / totalAttempts) * 100 : null
+      // Tasa de aprobación: numerador y denominador en la misma base
+      // (ambos ya vienen de v_student_stats calculados solo sobre 'graded').
+      const totalGraded = allStudents.reduce((a: number, s: any) => a + (s.passed_count ?? 0) + (s.failed_count ?? 0), 0)
+      const totalPassed = allStudents.reduce((a: number, s: any) => a + (s.passed_count ?? 0), 0)
+      const passRate = totalGraded > 0 ? (totalPassed / totalGraded) * 100 : null
 
       const atRiskStudents = allStudents
         .filter((s: any) => (s.avg_score ?? 100) < 60 && s.total_attempts > 0)
         .sort((a: any, b: any) => (a.avg_score ?? 0) - (b.avg_score ?? 0))
 
       // ── Por nivel CEFR ──
+      // Mismo criterio: solo alumnos con al menos una corrección real.
       const CEFR = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2']
       const byLevel = CEFR.map(code => {
-        const group = allStudents.filter((s: any) => s.cefr_code === code && s.total_attempts > 0)
+        const group = allStudents.filter((s: any) => s.cefr_code === code && s.avg_score != null)
         const avg = group.length > 0
-          ? Math.round(group.reduce((a: number, s: any) => a + (s.avg_score ?? 0), 0) / group.length)
+          ? Math.round(group.reduce((a: number, s: any) => a + s.avg_score, 0) / group.length)
           : null
         return { code, count: group.length, avg }
       }).filter(l => l.count > 0)

@@ -237,6 +237,22 @@ export default function ImportReviewClient({
         updateQuestion(q.id, { _error: 'El enunciado es muy corto.' })
         continue
       }
+      // Opciones con texto duplicado dentro de la misma pregunta —
+      // el alumno no puede distinguirlas y la corrección queda ambigua.
+      {
+        const seen = new Set<string>()
+        const dup = q.options.find(o => {
+          const norm = o.body.trim().toLowerCase()
+          if (!norm) return false
+          if (seen.has(norm)) return true
+          seen.add(norm)
+          return false
+        })
+        if (dup) {
+          updateQuestion(q.id, { _error: `Dos opciones con el mismo texto: "${dup.body.trim()}".` })
+          continue
+        }
+      }
 
       // INSERT en banco de preguntas
       const { data: newQ, error: qErr } = await supabase
@@ -277,7 +293,11 @@ export default function ImportReviewClient({
               }))
           )
         if (optsErr) {
-          updateQuestion(q.id, { _error: `Opciones: ${optsErr.message}` })
+          updateQuestion(q.id, {
+            _error: optsErr.code === '23505'
+              ? 'Tiene opciones con texto duplicado.'
+              : `Opciones: ${optsErr.message}`,
+          })
           continue
         }
       }

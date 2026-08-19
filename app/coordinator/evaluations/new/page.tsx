@@ -258,6 +258,21 @@ export default function NewEvaluationPage() {
       setError(`La pregunta ${emptyBodyIdx + 1} no tiene enunciado. Completala antes de guardar.`)
       return
     }
+    // Validar que ninguna pregunta tenga dos opciones con el mismo texto —
+    // el alumno no puede distinguirlas visualmente y la corrección queda ambigua.
+    for (let i = 0; i < questions.length; i++) {
+      const opts = questions[i].options ?? []
+      const seen = new Set<string>()
+      for (const o of opts) {
+        const norm = (o.body ?? '').trim().toLowerCase()
+        if (!norm) continue
+        if (seen.has(norm)) {
+          setError(`La pregunta ${i + 1} tiene dos opciones con el mismo texto ("${o.body.trim()}"). Corregilo antes de guardar — el alumno no podría distinguirlas.`)
+          return
+        }
+        seen.add(norm)
+      }
+    }
     setSaving(true); setError(null)
 
     const { data: { user } } = await supabase.auth.getUser()
@@ -320,12 +335,19 @@ export default function NewEvaluationPage() {
         continue
       }
       if (q.options.length > 0) {
-        await sb.from('options').insert(
+        const { error: optErr } = await sb.from('options').insert(
           q.options.map((o: any, oi: number) => ({
             question_id: savedQ.id, body: o.body.trim() || o.body,
             is_correct: o.is_correct, sort_order: oi + 1,
           }))
         )
+        if (optErr) {
+          questionErrors++
+          lastQErrMsg = optErr.code === '23505'
+            ? `La pregunta ${i + 1} tiene opciones con texto duplicado.`
+            : (optErr.message ?? 'Error al guardar las opciones.')
+          console.error(`SUPABASE OPTIONS INSERT ERROR (pregunta ${i + 1}):`, JSON.stringify(optErr))
+        }
       }
     }
 

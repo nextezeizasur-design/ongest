@@ -100,6 +100,21 @@ export default function EditEvaluationClient({ evaluation: ev, questions: dbQs, 
   async function handleSave(status: 'draft' | 'published') {
     if (!title.trim()) { setError('El título es obligatorio.'); return }
     if (questions.length === 0) { setError('Agregá al menos una pregunta.'); return }
+    // Validar que ninguna pregunta tenga dos opciones con el mismo texto —
+    // el alumno no puede distinguirlas visualmente y la corrección queda ambigua.
+    for (let i = 0; i < questions.length; i++) {
+      const opts = questions[i].options ?? []
+      const seen = new Set<string>()
+      for (const o of opts) {
+        const norm = (o.body ?? '').trim().toLowerCase()
+        if (!norm) continue
+        if (seen.has(norm)) {
+          setError(`La pregunta ${i + 1} tiene dos opciones con el mismo texto ("${o.body.trim()}"). Corregilo antes de guardar — el alumno no podría distinguirlas.`)
+          return
+        }
+        seen.add(norm)
+      }
+    }
     setSaving(true); setError(null)
 
     const sb = supabase as any
@@ -126,9 +141,12 @@ export default function EditEvaluationClient({ evaluation: ev, questions: dbQs, 
     // 2. Eliminar preguntas anteriores y recrear
     await sb.from('questions').delete().eq('evaluation_id', ev.id)
 
+    let saveErrors = 0
+    let lastSaveErrMsg = ''
+
     for (let i = 0; i < questions.length; i++) {
       const q = questions[i]
-      const { data: savedQ } = await sb
+      const { data: savedQ, error: qErr } = await sb
         .from('questions')
         .insert({
           evaluation_id: ev.id,
@@ -141,8 +159,15 @@ export default function EditEvaluationClient({ evaluation: ev, questions: dbQs, 
         .select('id')
         .single()
 
-      if (savedQ && q.options.length > 0) {
-        await sb.from('options').insert(
+      if (qErr || !savedQ) {
+        saveErrors++
+        lastSaveErrMsg = qErr?.message ?? 'Error al guardar la pregunta.'
+        console.error(`SUPABASE QUESTION UPDATE ERROR (pregunta ${i + 1}):`, JSON.stringify(qErr))
+        continue
+      }
+
+      if (q.options.length > 0) {
+        const { error: optErr } = await sb.from('options').insert(
           q.options.map((o, oi) => ({
             question_id: savedQ.id,
             body:        o.body.trim() || o.body,
@@ -150,7 +175,20 @@ export default function EditEvaluationClient({ evaluation: ev, questions: dbQs, 
             sort_order:  oi + 1,
           }))
         )
+        if (optErr) {
+          saveErrors++
+          lastSaveErrMsg = optErr.code === '23505'
+            ? `La pregunta ${i + 1} tiene opciones con texto duplicado.`
+            : (optErr.message ?? 'Error al guardar las opciones.')
+          console.error(`SUPABASE OPTIONS UPDATE ERROR (pregunta ${i + 1}):`, JSON.stringify(optErr))
+        }
       }
+    }
+
+    if (saveErrors > 0) {
+      setError(`Se guardó la evaluación pero hubo un problema con ${saveErrors} pregunta${saveErrors > 1 ? 's' : ''}: ${lastSaveErrMsg}. Revisá antes de salir.`)
+      setSaving(false)
+      return
     }
 
     // Redirigir según rol

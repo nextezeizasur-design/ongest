@@ -84,14 +84,17 @@ export default async function DirectorMonthlyPage({
   const cefrByEval: Record<string, string> = {}
   for (const e of orgEvals ?? []) cefrByEval[e.id] = e.cefr_levels?.code ?? 'Sin nivel'
 
-  // ── 3. Intentos del mes y del mes anterior (excluye timed_out, según regla de negocio) ──
+  // ── 3. Intentos del mes y del mes anterior ──
+  // Promedio y aprobación: solo 'graded' (regla unificada con Dashboard
+  // y Reportes — un intento 'submitted' puede tener corrección manual
+  // pendiente y no debe contaminar el promedio institucional).
   async function attemptsInRange(start: Date, end: Date) {
     if (evalIds.length === 0) return []
     const { data } = await sb
       .from('attempts')
       .select('evaluation_id, score, passed, status, submitted_at')
       .in('evaluation_id', evalIds)
-      .in('status', ['submitted', 'graded'])
+      .eq('status', 'graded')
       .gte('submitted_at', start.toISOString())
       .lt('submitted_at', end.toISOString())
     return data ?? []

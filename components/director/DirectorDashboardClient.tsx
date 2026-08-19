@@ -4,6 +4,7 @@
 
 import { useState, useEffect } from 'react'
 import OnboardingWizard from '@/components/director/OnboardingWizard'
+import InfoTooltip from '@/components/shared/InfoTooltip'
 import { formatDateTime } from '@/lib/utils'
 
 interface Profile {
@@ -144,7 +145,10 @@ export default function DirectorDashboardClient({
                 <p className={`text-2xl md:text-3xl font-bold ${scoreColor(stats.avgScore)}`}>
                   {stats.avgScore !== null ? `${stats.avgScore}%` : '—'}
                 </p>
-                <p className="text-xs text-gray-500 mt-1">Promedio general</p>
+                <p className="text-xs text-gray-500 mt-1 flex items-center justify-center">
+                  Promedio general
+                  <InfoTooltip text="Promedio de todas las evaluaciones ya corregidas, histórico completo (no solo este mes). Por eso puede diferir del Dashboard Ejecutivo, que muestra el promedio de un mes puntual." />
+                </p>
               </div>
 
               <div className="card text-center">

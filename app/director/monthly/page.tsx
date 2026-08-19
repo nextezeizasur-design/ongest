@@ -7,6 +7,7 @@ export const dynamic = 'force-dynamic'
 import { requireRole } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import TopBar from '@/components/layout/TopBar'
+import InfoTooltip from '@/components/shared/InfoTooltip'
 import { formatScore, scoreColor } from '@/lib/utils'
 
 export const metadata = { title: 'Dashboard Ejecutivo' }
@@ -181,7 +182,10 @@ export default async function DirectorMonthlyPage({
             </div>
 
             <div className="card">
-              <p className="text-xs text-gray-500 mb-1">Promedio institucional</p>
+              <p className="text-xs text-gray-500 mb-1 flex items-center">
+                Promedio institucional
+                <InfoTooltip text={`Promedio de las evaluaciones corregidas solo en ${MONTH_NAMES[monthIdx]} ${year}. El Dashboard general muestra el promedio histórico completo, por eso los dos números no tienen por qué coincidir.`} />
+              </p>
               <p className={`text-2xl font-bold ${scoreColor(avgThisMonth)}`}>{formatScore(avgThisMonth)}</p>
               {avgDelta && <p className={`text-xs mt-1 ${avgDelta.color}`}>{avgDelta.label}pts vs mes anterior</p>}
             </div>

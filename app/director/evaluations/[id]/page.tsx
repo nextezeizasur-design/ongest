@@ -12,6 +12,7 @@ import PublishButton from '@/components/coordinator/PublishButton'
 import DeleteEvaluationButton from '@/components/coordinator/DeleteEvaluationButton'
 import ReopenAttemptButton from '@/components/coordinator/ReopenAttemptButton'
 import ExtendAvailabilityButton from '@/components/coordinator/ExtendAvailabilityButton'
+import PublishResultsButton from '@/components/coordinator/PublishResultsButton'
 import MaxAttemptsEditor from '@/components/coordinator/MaxAttemptsEditor'
 import { formatDate, formatDateTime, formatDuration, getEvalStatus, EVAL_STATUS_LABEL, ATTEMPT_STATUS_LABEL, EVAL_TYPE_LABEL } from '@/lib/utils'
 
@@ -30,7 +31,7 @@ export default async function DirectorEvaluationDetail({
   const [{ data: ev }, { data: attempts }, { data: questions }, { data: assignedCourses }] = await Promise.all([
     sb.from('evaluations').select('*, cefr_levels(code, label)').eq('id', id).single(),
     sb.from('attempts')
-      .select('*, profiles!attempts_student_id_fkey(first_name, last_name, email)')
+      .select('*, results_published_at, profiles!attempts_student_id_fkey(first_name, last_name, email)')
       .eq('evaluation_id', id)
       .in('status', ['submitted', 'graded', 'in_progress', 'timed_out'])
       .order('submitted_at', { ascending: false }),
@@ -54,6 +55,7 @@ export default async function DirectorEvaluationDetail({
   const st            = getEvalStatus({ status: ev.status, available_from: ev.available_from, available_until: ev.available_until })
   const completedAtts = (attempts ?? []).filter((a: any) => ['submitted','graded'].includes(a.status))
   const pendingGrade  = completedAtts.filter((a: any) => a.status === 'submitted')
+  const pendingPublish = completedAtts.filter((a: any) => a.status === 'graded' && !a.results_published_at)
   const avgScore      = completedAtts.length
     ? Math.round(completedAtts.reduce((acc: number, a: any) => acc + (a.score ?? 0), 0) / completedAtts.length)
     : null
@@ -132,6 +134,12 @@ export default async function DirectorEvaluationDetail({
         {hasOpenQs && pendingGrade.length > 0 && (
           <AlertBanner type="warn">
             <strong>{pendingGrade.length} intento{pendingGrade.length > 1 ? 's' : ''}</strong> pendientes de corrección manual.
+          </AlertBanner>
+        )}
+
+        {pendingPublish.length > 0 && (
+          <AlertBanner type="warn">
+            <strong>{pendingPublish.length} resultado{pendingPublish.length > 1 ? 's' : ''}</strong> ya corregido{pendingPublish.length > 1 ? 's' : ''} esperando publicación — el alumno no los ve hasta que los publiques.
           </AlertBanner>
         )}
 
@@ -217,6 +225,9 @@ export default async function DirectorEvaluationDetail({
                         <Badge variant={att.status === 'graded' ? 'green' : att.status === 'submitted' ? 'amber' : att.status === 'in_progress' ? 'blue' : 'gray'}>
                           {ATTEMPT_STATUS_LABEL[att.status as keyof typeof ATTEMPT_STATUS_LABEL] ?? att.status}
                         </Badge>
+                        {att.status === 'graded' && !att.results_published_at && (
+                          <span className="block mt-1 text-[10px] font-medium text-amber-600">⏳ Sin publicar</span>
+                        )}
                       </td>
                       {hasOpenQs && (
                         <td>
@@ -228,9 +239,17 @@ export default async function DirectorEvaluationDetail({
                         </td>
                       )}
                       <td>
-                        {att.status !== 'in_progress' && (
-                          <ReopenAttemptButton attemptId={att.id} studentName={`${s?.first_name ?? ''} ${s?.last_name ?? ''}`.trim()} />
-                        )}
+                        <div className="flex flex-col items-start gap-1">
+                          {att.status === 'graded' && !att.results_published_at && (
+                            <PublishResultsButton
+                              attemptId={att.id}
+                              studentName={`${s?.first_name ?? ''} ${s?.last_name ?? ''}`.trim()}
+                            />
+                          )}
+                          {att.status !== 'in_progress' && (
+                            <ReopenAttemptButton attemptId={att.id} studentName={`${s?.first_name ?? ''} ${s?.last_name ?? ''}`.trim()} />
+                          )}
+                        </div>
                       </td>
                     </tr>
                   )

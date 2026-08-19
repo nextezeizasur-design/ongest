@@ -40,14 +40,19 @@ export default async function ResultsPage({
   const { data: attemptsRaw } = await sb
     .from('attempts')
     .select(`
-      id, score, passed, status, submitted_at, started_at,
+      id, score, passed, status, submitted_at, started_at, results_published_at,
       evaluations ( id, title, eval_type, pass_score, cefr_levels(code, label) )
     `)
     .eq('student_id', profile.id)
     .in('status', ['submitted', 'graded', 'timed_out', 'flagged'])
     .order('submitted_at', { ascending: false })
 
-  const attempts = attemptsRaw ?? []
+  // 🔒 Mismo criterio que services/attempts.ts: un 'graded' sin publicar
+  // (auto-grade de evaluación objetiva sin intervención de staff todavía)
+  // no se muestra en el historial ni cuenta en las estadísticas.
+  const attempts = (attemptsRaw ?? []).filter(
+    (a: any) => a.status !== 'graded' || a.results_published_at != null
+  )
 
   // ── Radar de habilidades ─────────────────────────────────────────────────
   const { data: radarData } = await sb.rpc('get_student_radar', {

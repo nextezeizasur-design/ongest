@@ -7,12 +7,20 @@ export async function getStudentAttempts(studentId: string) {
 
   // Traemos submitted, graded Y timed_out para mostrarlos al alumno,
   // pero el promedio solo considera submitted y graded (con score real).
-  const { data: attempts, error } = await sb
+  const { data: attemptsRaw, error } = await sb
     .from('attempts')
     .select('*')
     .eq('student_id', studentId)
     .in('status', ['submitted', 'graded', 'timed_out'])
     .order('created_at', { ascending: false })
+
+  // 🔒 Un intento 'graded' puede haber quedado así por auto-grade
+  // (evaluación 100% objetiva) sin que nadie del staff lo haya publicado
+  // todavía — en ese caso, se oculta del historial del alumno hasta que
+  // se publique explícitamente (results_published_at).
+  const attempts = (attemptsRaw ?? []).filter(
+    (a: any) => a.status !== 'graded' || a.results_published_at != null
+  )
 
   if (!attempts?.length) return { data: [], error }
 

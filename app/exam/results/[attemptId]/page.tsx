@@ -23,7 +23,7 @@ export default async function StudentResultPage({
   const { data: attempt } = await sb
     .from('attempts')
     .select(`
-      id, score, passed, status, submitted_at,
+      id, score, passed, status, submitted_at, results_published_at,
       evaluations ( id, title, pass_score, description )
     `)
     .eq('id', attemptId)
@@ -39,14 +39,12 @@ export default async function StudentResultPage({
   }
 
   // 🔒 REGLA CRÍTICA: bajo ningún concepto se muestra nota, corrección o
-  // información de puntaje al alumno hasta que el docente haya finalizado
-  // la corrección completa del examen (status === 'graded').
-  // Esto aplica incluso a las preguntas de opción múltiple / V-F, que se
-  // auto-marcan como correctas/incorrectas apenas se entrega el examen
-  // (para que el docente las vea ya resueltas) — esa marca es solo para
-  // uso interno del corrector, nunca para mostrarle nada al alumno antes
-  // de que la corrección esté 100% finalizada.
-  if (attempt.status !== 'graded') {
+  // información de puntaje al alumno hasta que el resultado esté publicado
+  // (results_published_at). NO alcanza con status === 'graded': ese status
+  // también lo pone el auto-grade de evaluaciones 100% objetivas sin que
+  // ningún docente/coordinador haya intervenido — por eso el gate real es
+  // la publicación explícita, no el status.
+  if (!attempt.results_published_at) {
     return (
       <div className="flex flex-1 flex-col overflow-hidden">
         <TopBar

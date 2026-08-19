@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
     const { data: attempt } = await sb
       .from('attempts')
       .select(`
-        id, student_id, score, passed, submitted_at,
+        id, student_id, score, passed, submitted_at, results_published_at,
         evaluations ( id, title, organization_id, pass_score )
       `)
       .eq('id', attempt_id)
@@ -60,6 +60,30 @@ export async function POST(req: NextRequest) {
 
     if (!isOwner && !isStaff) {
       return NextResponse.json({ error: 'Sin permisos para emitir este certificado.' }, { status: 403 })
+    }
+
+    // 🔒 Ningún resultado se muestra al alumno ni se emite certificado
+    // hasta que el resultado esté publicado (results_published_at).
+    // - Si llama el propio alumno: solo puede emitir si ya está publicado.
+    // - Si llama staff (director/coordinator/teacher): esta llamada ES el
+    //   acto de publicar — se marca results_published_at ahora mismo.
+    if (!attempt.results_published_at) {
+      if (!isStaff) {
+        return NextResponse.json(
+          { error: 'Tu resultado todavía no fue publicado.' },
+          { status: 403 }
+        )
+      }
+      const { error: publishErr } = await sb
+        .from('attempts')
+        .update({ results_published_at: new Date().toISOString() })
+        .eq('id', attempt_id)
+        .is('results_published_at', null)
+
+      if (publishErr) {
+        console.error('Error publishing attempt:', publishErr)
+        return NextResponse.json({ error: publishErr.message }, { status: 500 })
+      }
     }
 
     // Si ya existe un certificado para este intento, borrarlo para re-emitirlo

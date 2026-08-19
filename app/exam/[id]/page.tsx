@@ -397,24 +397,15 @@ function ExamPage({ params }: { params: Promise<{ id: string }> }) {
       const manualTypes = ['short_answer', 'essay', 'speaking']
       const needsManualReview = exam?.questions?.some((q: any) => manualTypes.includes(q.q_type)) ?? false
 
-      // Emitir certificado solo si NO hay preguntas de corrección manual
-      if (!needsManualReview) {
-        fetch('/api/certificates/issue', {
-          method:  'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body:    JSON.stringify({ attempt_id: att.id }),
-        }).catch(() => {})
-      }
-
-      if (needsManualReview) {
-        // Mostrar modal informativo — el docente debe completar la corrección
-        setHasPendingReview(true)
-        setShowPendingModal(true)
-        setSubmitting(false)
-      } else {
-        // Auto-corrección completa → ir directo a resultados
-        router.push('/results')
-      }
+      // ⚠️ Nunca se emite certificado ni se muestra el resultado al alumno
+      // desde acá, sea la evaluación objetiva o de corrección manual.
+      // El score ya quedó calculado en `attempts` (vía auto_grade_attempt /
+      // auto_grade_attempt_partial), pero permanece oculto hasta que el
+      // staff (docente/coordinador/director) lo publique explícitamente
+      // (results_published_at). Recién ahí se emite el certificado.
+      setHasPendingReview(needsManualReview)
+      setShowPendingModal(true)
+      setSubmitting(false)
 
     } catch (err) {
       console.error('Error al entregar examen:', err)
@@ -918,8 +909,9 @@ function ExamPage({ params }: { params: Promise<{ id: string }> }) {
             <div className="rounded-xl border border-purple-200 bg-purple-50 px-4 py-4 mb-6 text-left space-y-2">
               <p className="text-sm font-semibold text-purple-800">⏳ Corrección en proceso</p>
               <p className="text-sm text-purple-700">
-                Este examen tiene preguntas que requieren corrección manual por parte de tu docente.
-                Tu nota final estará disponible una vez que el docente complete la revisión.
+                {hasPendingReview
+                  ? 'Este examen tiene preguntas que requieren corrección manual por parte de tu docente. Tu nota final estará disponible una vez que el docente complete la revisión.'
+                  : 'Tu nota ya fue calculada y está siendo revisada por el equipo académico antes de publicarse.'}
               </p>
               <p className="text-sm text-purple-700">
                 Recibirás una notificación 🔔 cuando tu nota esté lista.

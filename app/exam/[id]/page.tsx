@@ -120,6 +120,7 @@ function ExamPage({ params }: { params: Promise<{ id: string }> }) {
   // Refs para evitar stale closures
   const phaseRef     = useRef<Phase>('instructions')
   const attemptRef   = useRef<AttemptData | null>(null)
+  const examRef      = useRef<ExamData | null>(null)
   const warningsRef  = useRef(0)
   const submittedRef = useRef(false)
   const answersRef   = useRef<Record<string, string>>({})
@@ -127,6 +128,7 @@ function ExamPage({ params }: { params: Promise<{ id: string }> }) {
 
   useEffect(() => { phaseRef.current    = phase    }, [phase])
   useEffect(() => { attemptRef.current  = attempt  }, [attempt])
+  useEffect(() => { examRef.current     = exam     }, [exam])
   useEffect(() => { warningsRef.current = warnings }, [warnings])
   useEffect(() => { answersRef.current  = answers  }, [answers])
 
@@ -373,7 +375,7 @@ function ExamPage({ params }: { params: Promise<{ id: string }> }) {
 
       // Detectar preguntas manuales ANTES de auto-calificar
       const manualQTypes = ['short_answer', 'essay', 'speaking']
-      const hasManualQs = exam?.questions?.some((q: any) => manualQTypes.includes(q.q_type)) ?? false
+      const hasManualQs = examRef.current?.questions?.some((q: any) => manualQTypes.includes(q.q_type)) ?? false
 
       // Auto-calificar: si hay preguntas manuales, solo calificar las objetivas
       // y NO guardar score final (queda null hasta que el docente corrija)
@@ -395,7 +397,7 @@ function ExamPage({ params }: { params: Promise<{ id: string }> }) {
 
       // Detectar si hay preguntas de corrección manual
       const manualTypes = ['short_answer', 'essay', 'speaking']
-      const needsManualReview = exam?.questions?.some((q: any) => manualTypes.includes(q.q_type)) ?? false
+      const needsManualReview = examRef.current?.questions?.some((q: any) => manualTypes.includes(q.q_type)) ?? false
 
       // ⚠️ Nunca se emite certificado ni se muestra el resultado al alumno
       // desde acá, sea la evaluación objetiva o de corrección manual.

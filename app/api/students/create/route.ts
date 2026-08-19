@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { rateLimit, getClientIp } from '@/lib/rate-limit'
+import { generateTempPassword } from '@/lib/temp-password'
 
 const RATE_LIMIT = { windowMs: 60_000, max: 10 } // 10 por minuto
 
@@ -53,9 +54,8 @@ export async function POST(request: NextRequest) {
       { cookies: { getAll() { return [] }, setAll() {} } }
     )
 
-    // Generar contraseña temporal (10 caracteres)
-    const tempPassword = Math.random().toString(36).slice(2, 7) +
-                         Math.random().toString(36).slice(2, 7).toUpperCase()
+    // Generar contraseña temporal fácil de tipear a mano (solo minúsculas y números)
+    const tempPassword = generateTempPassword()
 
     const { data: authData, error: authError } = await (adminSupabase as any).auth.admin.createUser({
       email:          email.trim().toLowerCase(),

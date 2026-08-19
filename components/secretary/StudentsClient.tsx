@@ -51,6 +51,14 @@ export default function StudentsClient({ orgId }: { orgId: string }) {
   const [copied,       setCopied]       = useState(false)
   const [form,         setForm]         = useState({ first_name:'', last_name:'', email:'', phone:'', birth_date:'', course_id:'' })
 
+  // Reenviar credenciales / cambiar contraseña temporal
+  const [credModal,   setCredModal]   = useState<Student | null>(null)
+  const [credMode,    setCredMode]    = useState<'auto'|'custom'>('auto')
+  const [credCustom,  setCredCustom]  = useState('')
+  const [credLoading, setCredLoading] = useState(false)
+  const [credResult,  setCredResult]  = useState<{ password: string; email: string; name: string } | null>(null)
+  const [credCopied,  setCredCopied]  = useState(false)
+
   const sb = createClient() as any
 
   async function load() {
@@ -89,6 +97,37 @@ export default function StudentsClient({ orgId }: { orgId: string }) {
   }
 
   function closeModal() { setModal(null); setEditing(null); setInvited(false) }
+
+  function openCred(s: Student) {
+    setModal(null)
+    setCredModal(s)
+    setCredMode('auto')
+    setCredCustom('')
+    setCredResult(null)
+    setCredCopied(false)
+  }
+  function closeCred() { setCredModal(null) }
+
+  async function handleResetPassword() {
+    if (!credModal) return
+    if (credMode === 'custom' && credCustom.trim().length < 6) {
+      showToast('err', 'La contraseña debe tener al menos 6 caracteres.')
+      return
+    }
+    setCredLoading(true)
+    const res = await fetch('/api/students/reset-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        student_id: credModal.id,
+        custom_password: credMode === 'custom' ? credCustom.trim() : undefined,
+      }),
+    })
+    const data = await res.json()
+    setCredLoading(false)
+    if (!res.ok) { showToast('err', data.error ?? 'Error al generar la contraseña.'); return }
+    setCredResult({ password: data.temp_password, email: data.email, name: data.full_name })
+  }
 
   async function handleCreate() {
     if (!form.first_name || !form.last_name || !form.email) {
@@ -197,6 +236,9 @@ export default function StudentsClient({ orgId }: { orgId: string }) {
                     <td>
                       <div className="flex gap-3">
                         <button onClick={() => openEdit(s)} className="text-xs font-medium" style={{color:'#642f8d'}}>Editar</button>
+                        <button onClick={() => openCred(s)} className="text-xs font-medium text-sky-700" title="Reenviar credenciales o cambiar la contraseña temporal">
+                          🔑 Credenciales
+                        </button>
                         <button onClick={() => toggleActive(s)} className={`text-xs ${s.is_active ? 'text-red-600' : 'text-green-700'}`}>
                           {s.is_active ? 'Desactivar' : 'Activar'}
                         </button>
@@ -326,6 +368,130 @@ export default function StudentsClient({ orgId }: { orgId: string }) {
                   <button onClick={closeModal} className="btn-outline">Cancelar</button>
                   <button onClick={modal==='new' ? handleCreate : handleEdit} disabled={saving} className="btn-brand">
                     {saving ? 'Guardando…' : modal==='new' ? 'Crear alumno' : 'Guardar cambios'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {credModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{background:'rgba(0,0,0,0.45)'}} onClick={closeCred}>
+          <div className="card w-full max-w-lg shadow-2xl animate-fade-up" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="text-base font-semibold text-gray-900">
+                Credenciales — {credModal.first_name} {credModal.last_name}
+              </h2>
+              <button onClick={closeCred} className="text-gray-400 hover:text-gray-600 text-lg">✕</button>
+            </div>
+
+            {credResult ? (
+              <div className="space-y-4">
+                <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-4 space-y-3">
+                  <p className="text-sm font-semibold text-green-800">✓ Contraseña actualizada</p>
+                  <div className="space-y-1">
+                    <p className="text-xs text-gray-500">Email</p>
+                    <p className="text-sm font-medium text-gray-900">{credResult.email}</p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-xs text-gray-500">Nueva contraseña</p>
+                    <div className="flex items-center gap-2">
+                      <code className="flex-1 rounded-lg bg-white border border-gray-200 px-3 py-2 text-sm font-mono font-semibold text-gray-900 tracking-wider">
+                        {credResult.password}
+                      </code>
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(credResult.password)
+                          setCredCopied(true)
+                          setTimeout(() => setCredCopied(false), 2000)
+                        }}
+                        className="btn-outline text-xs px-3 py-2 flex-shrink-0"
+                      >
+                        {credCopied ? '✓ Copiada' : 'Copiar'}
+                      </button>
+                    </div>
+                  </div>
+                  <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                    ⚠️ La contraseña anterior dejó de funcionar. Compartí esta — solo se muestra una vez.
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <a
+                    href={`https://wa.me/?text=${encodeURIComponent(
+                      `Hola ${credResult.name}! 👋 Actualizamos tus datos de acceso a OnGest (Next English).
+
+` +
+                      `🌐 Plataforma: https://ongest.vercel.app/login?org=next-english
+` +
+                      `📧 Email: ${credResult.email}
+` +
+                      `🔑 Nueva contraseña: ${credResult.password}
+
+` +
+                      `Escribila tal cual aparece, todo en minúscula. Ante cualquier duda, escribinos por acá.`
+                    )}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="btn-outline flex-1 text-center text-sm flex items-center justify-center gap-2"
+                    style={{ borderColor: '#25d366', color: '#25d366' }}
+                  >
+                    💬 Enviar por WhatsApp
+                  </a>
+                  <button onClick={closeCred} className="btn-brand flex-1 text-sm">Cerrar</button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <p className="text-sm text-gray-500">
+                  Esto reemplaza la contraseña actual del alumno. La anterior deja de funcionar apenas confirmés.
+                </p>
+
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setCredMode('auto')}
+                    className={`flex-1 rounded-xl border px-3 py-2 text-sm font-medium ${credMode==='auto' ? 'border-purple-400 bg-purple-50 text-purple-800' : 'border-gray-200 text-gray-500'}`}
+                  >
+                    Generar automática
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCredMode('custom')}
+                    className={`flex-1 rounded-xl border px-3 py-2 text-sm font-medium ${credMode==='custom' ? 'border-purple-400 bg-purple-50 text-purple-800' : 'border-gray-200 text-gray-500'}`}
+                  >
+                    Escribir una fácil
+                  </button>
+                </div>
+
+                {credMode === 'custom' ? (
+                  <div>
+                    <label className="label">Contraseña personalizada</label>
+                    <input
+                      type="text"
+                      value={credCustom}
+                      onChange={e => setCredCustom(e.target.value)}
+                      placeholder="Ej: martina2025"
+                      className="input"
+                    />
+                    <p className="text-xs text-gray-400 mt-1">
+                      Mínimo 6 caracteres. Elegí algo simple para que el alumno lo tipee sin errores — evitá mayúsculas y símbolos, muchos prefieren escribirla en vez de copiarla y pegarla.
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-xs text-gray-400">
+                    Se genera una contraseña de 8 caracteres, solo minúsculas y números, sin letras que se presten a confusión (sin 0, o, 1, l, i).
+                  </p>
+                )}
+
+                <div className="flex gap-2 justify-end pt-2">
+                  <button onClick={closeCred} className="btn-outline">Cancelar</button>
+                  <button
+                    onClick={handleResetPassword}
+                    disabled={credLoading || (credMode === 'custom' && credCustom.trim().length < 6)}
+                    className="btn-brand"
+                  >
+                    {credLoading ? 'Generando…' : 'Confirmar y generar'}
                   </button>
                 </div>
               </div>

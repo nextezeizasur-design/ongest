@@ -20,6 +20,11 @@ export async function getEvaluationStats(orgId: string) {
     .eq('organization_id', orgId)
     .order('created_at', { ascending: false })
 
+  // TEMPORAL — diagnóstico del bug "evaluaciones publicadas no aparecen en
+  // la lista". Loguea el error real de Supabase/PostgREST en los Runtime
+  // Logs de Vercel. Sacar esta línea una vez identificada la causa.
+  if (error) console.error('[getEvaluationStats] Supabase error:', JSON.stringify(error))
+
   return { data: (data ?? []) as EvaluationStats[], error }
 }
 

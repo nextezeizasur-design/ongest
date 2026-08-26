@@ -290,9 +290,12 @@ export default function GradePage({ params }: { params: Promise<{ id: string }> 
         } catch { /* no crítico */ }
 
         setDone(true)
-        router.refresh()
+        // Navegación dura (no router.push/refresh): el Router Cache del
+        // cliente de Next.js puede servir la lista de resultados que el
+        // usuario ya tenía visitada en lugar de volver a pedirle los datos
+        // al servidor, mostrando el intento como no corregido todavía.
         await new Promise(res => setTimeout(res, 400))
-        router.push('/teacher/results')
+        window.location.href = '/teacher/results'
       }
 
     } catch (err: any) {

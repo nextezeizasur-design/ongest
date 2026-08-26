@@ -61,8 +61,11 @@ export default function DirectorNewCoursePage() {
 
     setSaving(false)
     if (err) { setError('Error al guardar: ' + err.message); return }
-    router.push('/director/courses')
-    router.refresh()
+    // Navegación dura (no router.push/refresh): el Router Cache del
+    // cliente de Next.js puede servir la lista de cursos que el usuario
+    // ya tenía visitada en lugar de volver a pedirle los datos al
+    // servidor, mostrando la lista sin el curso recién creado.
+    window.location.href = '/director/courses'
   }
 
   return (

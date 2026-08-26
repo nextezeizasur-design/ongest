@@ -366,9 +366,15 @@ export default function NewEvaluationPage() {
       toast.info('Borrador guardado', `"${title.trim()}" guardado como borrador.`)
     }
 
-    // Pequeño delay para que el toast sea visible antes de navegar
+    // Pequeño delay para que el toast sea visible antes de navegar.
+    // Navegación dura (no router.push): el Router Cache del cliente de
+    // Next.js puede servir la lista de evaluaciones que el usuario ya
+    // tenía visitada (hasta 30s de antigüedad) en lugar de volver a
+    // pedirle los datos al servidor — con eso, la evaluación recién
+    // publicada no aparece aunque esté guardada correctamente en la base.
+    // window.location.href fuerza una carga completa y descarta ese caché.
     setTimeout(() => {
-      router.push(redirectTo)
+      window.location.href = redirectTo
     }, 1200)
   }
 

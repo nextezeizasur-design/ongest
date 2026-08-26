@@ -264,9 +264,12 @@ export default function CoordinatorGradePage({ params }: { params: Promise<{ id:
         } catch { /* no crítico */ }
 
         setDone(true)
-        router.refresh()
+        // Navegación dura (no router.push/refresh): el Router Cache del
+        // cliente de Next.js puede servir la lista de resultados que el
+        // usuario ya tenía visitada en lugar de volver a pedirle los datos
+        // al servidor, mostrando el intento como no corregido todavía.
         await new Promise(res => setTimeout(res, 400))
-        router.push('/coordinator/results')
+        window.location.href = '/coordinator/results'
       }
 
     } catch (err: any) {

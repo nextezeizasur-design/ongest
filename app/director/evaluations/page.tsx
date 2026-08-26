@@ -15,7 +15,7 @@ export default async function DirectorEvaluations({
 }) {
   const profile = await requireRole('director')
   const sp = await searchParams
-  const { data: all } = await getEvaluationStats(profile.organization_id)
+  const { data: all, error } = await getEvaluationStats(profile.organization_id)
 
   const filtered = sp.status
     ? all.filter(e => getEvalStatus({ status: e.status, available_from: e.available_from, available_until: e.available_until }) === sp.status)
@@ -34,6 +34,13 @@ export default async function DirectorEvaluations({
       />
 
       <main className="flex-1 overflow-y-auto p-6 space-y-4">
+        {error && (
+          <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+            <p className="font-medium">No pudimos cargar las evaluaciones.</p>
+            <p className="mt-1 text-red-600">Probá recargar la página. Si el problema sigue, avisale al equipo técnico — no significa que no existan evaluaciones publicadas.</p>
+          </div>
+        )}
+
         {/* Status filters */}
         <div className="flex flex-wrap gap-1.5">
           <a href="/director/evaluations"

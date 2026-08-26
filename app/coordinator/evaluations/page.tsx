@@ -8,7 +8,7 @@ export const metadata = { title: 'Evaluaciones' }
 
 export default async function CoordinatorEvaluations() {
   const profile = await requireRole(['director', 'coordinator'] as any)
-  const { data: evals } = await getEvaluationStats(profile.organization_id)
+  const { data: evals, error } = await getEvaluationStats(profile.organization_id)
 
   const base = profile.role === 'director' ? '/director' : '/coordinator'
 
@@ -21,7 +21,12 @@ export default async function CoordinatorEvaluations() {
       />
 
       <main className="flex-1 overflow-y-auto p-6">
-        {evals.length === 0 ? (
+        {error ? (
+          <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+            <p className="font-medium">No pudimos cargar las evaluaciones.</p>
+            <p className="mt-1 text-red-600">Probá recargar la página. Si el problema sigue, avisale al equipo técnico — no significa que no existan evaluaciones publicadas.</p>
+          </div>
+        ) : evals.length === 0 ? (
           <EmptyState
             title="Sin evaluaciones"
             description="Creá la primera evaluación para asignarla a los alumnos."

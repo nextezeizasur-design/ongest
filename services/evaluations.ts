@@ -20,9 +20,10 @@ export async function getEvaluationStats(orgId: string) {
     .eq('organization_id', orgId)
     .order('created_at', { ascending: false })
 
-  // TEMPORAL — diagnóstico del bug "evaluaciones publicadas no aparecen en
-  // la lista". Loguea el error real de Supabase/PostgREST en los Runtime
-  // Logs de Vercel. Sacar esta línea una vez identificada la causa.
+  // Logueamos el error real de Supabase/PostgREST en los Runtime Logs de
+  // Vercel — sin esto, un error queda invisible y la lista se ve vacía
+  // aunque haya evaluaciones publicadas (así se nos escapó el bug del
+  // 42703 "column created_at does not exist" tras la migración 009).
   if (error) console.error('[getEvaluationStats] Supabase error:', JSON.stringify(error))
 
   return { data: (data ?? []) as EvaluationStats[], error }

@@ -165,13 +165,45 @@ ${processedText}
 Respondé ÚNICAMENTE con el array JSON. Sin texto previo ni posterior. Sin markdown.`
 }
 
-// ─── Extraer texto del PDF (pdf-parse) ───────────────────────────────────────
+// ─── Extraer texto del PDF (pdfjs-dist) ──────────────────────────────────────
+// Se usa pdfjs-dist (mismo parser que el flujo de PDFs escaneados) en vez de
+// pdf-parse, cuya versión de pdf.js embebida (v1.10.100, ~2018) falla con
+// "bad XRef entry" en PDFs generados por ReportLab y otras editoriales que
+// incluyen comentarios dentro del trailer — algo legal según el spec de PDF
+// pero que ese parser viejo no tolera.
 
 async function extractPdfText(file: File): Promise<string> {
-  const pdfParse = (await import('pdf-parse')).default
-  const buffer   = Buffer.from(await file.arrayBuffer())
-  const data     = await pdfParse(buffer)
-  return data.text ?? ''
+  // Registra el worker en el hilo principal (globalThis.pdfjsWorker) para
+  // evitar depender de GlobalWorkerOptions.workerSrc, que en el entorno
+  // serverless de Vercel puede no resolver la ruta del archivo del worker.
+  await import('pdfjs-dist/legacy/build/pdf.worker.mjs' as any)
+  const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs' as any)
+
+  const data         = new Uint8Array(await file.arrayBuffer())
+  const loadingTask  = pdfjs.getDocument({ data, useSystemFonts: true })
+  const pdf          = await loadingTask.promise
+
+  let fullText = ''
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page        = await pdf.getPage(i)
+    const textContent = await page.getTextContent()
+
+    let lastY: number | null = null
+    let pageText = ''
+    for (const item of textContent.items as any[]) {
+      const str = item.str ?? ''
+      const y   = item.transform?.[5] ?? null
+      if (lastY !== null && y !== null && y !== lastY) {
+        pageText += '\n'
+      }
+      pageText += str
+      lastY = y
+    }
+
+    fullText += `\n\n${pageText}`
+  }
+
+  return fullText.trim()
 }
 
 // ─── Llamar a Claude API ──────────────────────────────────────────────────────

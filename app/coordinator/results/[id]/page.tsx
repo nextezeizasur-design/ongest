@@ -180,15 +180,18 @@ export default function CoordinatorGradePage({ params }: { params: Promise<{ id:
     setSaveError(null)
 
     try {
-      // 1. Guardar short_answer / essay
+      // 1. Guardar short_answer / essay / opción múltiple / verdadero-falso
+      // (multiple_choice y true_false se autocorrigen al enviar el examen, pero la
+      // profesora puede sobreescribir acá si la opción correcta quedó mal cargada)
       for (const ans of answers) {
         const q = ans.questions
-        if (!['short_answer', 'essay'].includes(q.q_type)) continue
+        const isObjType = ['multiple_choice', 'true_false'].includes(q.q_type)
+        if (!isObjType && !['short_answer', 'essay'].includes(q.q_type)) continue
         const earned = Math.min(Math.max(points[ans.id] ?? 0, 0), q.points)
         const { error } = await sb.from('answers').update({
           points_earned: earned,
           grader_note:   notes[ans.id] ?? '',
-          is_correct:    earned > 0,
+          is_correct:    isObjType ? earned >= q.points : earned > 0,
         }).eq('id', ans.id)
         if (error) throw new Error(`Error al guardar respuesta: ${error.message}`)
       }
@@ -382,11 +385,15 @@ export default function CoordinatorGradePage({ params }: { params: Promise<{ id:
                       {q.points} pt{q.points !== 1 ? 's' : ''}
                     </span>
                   </div>
-                  {isObj && (
-                    <Badge variant={ans.is_correct ? 'green' : 'red'}>
-                      {ans.is_correct ? 'Correcta' : 'Incorrecta'} · {ans.points_earned} pts
-                    </Badge>
-                  )}
+                  {isObj && (() => {
+                    const earned = points[ans.id] ?? ans.points_earned ?? 0
+                    const isOk   = earned >= q.points
+                    return (
+                      <Badge variant={isOk ? 'green' : 'red'}>
+                        {isOk ? 'Correcta' : 'Incorrecta'} · {earned} pts
+                      </Badge>
+                    )
+                  })()}
                   {(isWord || isMatch || isFill) && (
                     <Badge variant={ans.is_correct ? 'green' : 'red'}>
                       {ans.is_correct ? 'Correcto' : 'Incorrecto'} · {ans.points_earned} pts
@@ -423,6 +430,50 @@ export default function CoordinatorGradePage({ params }: { params: Promise<{ id:
                   </div>
                 )}
 
+                {/* Corrección manual — por si la opción correcta quedó mal cargada al crear la evaluación */}
+                {isObj && (() => {
+                  const earned = points[ans.id] ?? ans.points_earned ?? 0
+                  const isOk   = earned >= q.points
+                  return (
+                    <div className="rounded-lg border border-dashed border-gray-200 bg-gray-50/60 px-3 py-2.5 mb-3 space-y-2">
+                      <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wide">
+                        ¿La corrección automática está mal? Corregila acá
+                      </p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setPoints(prev => ({ ...prev, [ans.id]: q.points }))}
+                          className={`text-xs px-3 py-1.5 rounded-lg border font-medium transition-colors ${
+                            isOk
+                              ? 'border-green-500 bg-green-50 text-green-700'
+                              : 'border-gray-200 text-gray-500 hover:border-green-300'
+                          }`}
+                        >
+                          ✓ Marcar correcta
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPoints(prev => ({ ...prev, [ans.id]: 0 }))}
+                          className={`text-xs px-3 py-1.5 rounded-lg border font-medium transition-colors ${
+                            !isOk
+                              ? 'border-red-500 bg-red-50 text-red-700'
+                              : 'border-gray-200 text-gray-500 hover:border-red-300'
+                          }`}
+                        >
+                          ✕ Marcar incorrecta
+                        </button>
+                      </div>
+                      <input
+                        type="text"
+                        value={notes[ans.id] ?? ''}
+                        onChange={e => setNotes(prev => ({ ...prev, [ans.id]: e.target.value }))}
+                        placeholder="Nota opcional para el alumno (ej: se corrigió un error en la opción marcada)"
+                        className="input text-xs"
+                      />
+                    </div>
+                  )
+                })()}
+
                 {/* Word order / Match / Fill blank */}
                 {(isWord || isMatch || isFill) && (
                   <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 mb-2">
@@ -446,8 +497,8 @@ export default function CoordinatorGradePage({ params }: { params: Promise<{ id:
                         {ans.text_answer || <span className="italic text-gray-400">Sin respuesta</span>}
                       </p>
                     </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
+                    <div className="space-y-3">
+                      <div className="w-40">
                         <label className="label">Puntos asignados (máx. {q.points})</label>
                         <input
                           type="number" min={0} max={q.points} step={0.5}
@@ -461,12 +512,12 @@ export default function CoordinatorGradePage({ params }: { params: Promise<{ id:
                       </div>
                       <div>
                         <label className="label">Nota al alumno (opcional)</label>
-                        <input
-                          type="text"
+                        <textarea
+                          rows={2}
                           value={notes[ans.id] ?? ''}
                           onChange={e => setNotes(prev => ({ ...prev, [ans.id]: e.target.value }))}
                           placeholder="Ej: Good attempt, but…"
-                          className="input"
+                          className="textarea w-full"
                         />
                       </div>
                     </div>

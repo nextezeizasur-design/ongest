@@ -21,24 +21,30 @@ export function scoreBarColor(score?: number | null): string {
 }
 
 // ─── Dates ────────────────────────────────────────────────────
+// CRÍTICO: siempre fijar timeZone explícitamente. Estas funciones se usan
+// también en Server Components, que en Vercel corren en UTC — sin el
+// timeZone fijo, las horas se muestran con el offset de UTC en vez de
+// la hora real de Argentina (desfasaje de 3 horas detectado en producción).
+const AR_TZ = 'America/Argentina/Buenos_Aires'
+
 export function formatDate(date?: string | null): string {
   if (!date) return '—'
   return new Intl.DateTimeFormat('es-AR', {
-    day: '2-digit', month: 'short', year: 'numeric',
+    day: '2-digit', month: 'short', year: 'numeric', timeZone: AR_TZ,
   }).format(new Date(date))
 }
 
 export function formatDateShort(date?: string | null): string {
   if (!date) return '—'
   return new Intl.DateTimeFormat('es-AR', {
-    day: '2-digit', month: 'short',
+    day: '2-digit', month: 'short', timeZone: AR_TZ,
   }).format(new Date(date))
 }
 
 export function formatDateTime(date?: string | null): string {
   if (!date) return '—'
   return new Intl.DateTimeFormat('es-AR', {
-    day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
+    day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: AR_TZ,
   }).format(new Date(date))
 }
 

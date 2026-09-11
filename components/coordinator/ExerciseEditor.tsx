@@ -145,6 +145,9 @@ export default function ExerciseEditor({ onAdd, onCancel }: ExerciseEditorProps)
   // Listening
   const [listeningAudioUrl,   setListeningAudioUrl]   = useState('')
   const [listeningAudioFile,  setListeningAudioFile]  = useState<File | null>(null)
+  const [audioUploading,      setAudioUploading]      = useState(false)
+  const [audioError,          setAudioError]          = useState<string | null>(null)
+  const MAX_AUDIO_MB = 50
   const [listeningQuestions,  setListeningQuestions]  = useState<{
     id: string; body: string; q_type: 'true_false' | 'multiple_choice' | 'short_answer'
     options: string[]; correct: number; answer: string
@@ -287,10 +290,13 @@ export default function ExerciseEditor({ onAdd, onCancel }: ExerciseEditorProps)
       }
 
       case 'listening': {
-        const audioRef = listeningAudioFile
-          ? `[AUDIO: ${listeningAudioFile.name}]`
-          : listeningAudioUrl.trim()
+        // listeningAudioUrl queda seteada tanto si se subió un archivo (URL real
+        // de Storage) como si se pegó una URL externa — siempre se prioriza por
+        // sobre el nombre de archivo, que ya no aporta nada útil al alumno.
+        const audioRef = listeningAudioUrl.trim()
           ? `[AUDIO URL: ${listeningAudioUrl.trim()}]`
+          : listeningAudioFile
+          ? `[AUDIO: ${listeningAudioFile.name}]` // subida en curso o falló — se guarda igual como referencia
           : '[AUDIO PENDIENTE]'
 
         return listeningQuestions
@@ -374,6 +380,42 @@ export default function ExerciseEditor({ onAdd, onCancel }: ExerciseEditorProps)
     const qs = buildQuestions()
     if (qs.length === 0) return
     onAdd(qs, instruction)
+  }
+
+  // ── Listening: subir audio ──
+  // Validación de tamaño ANTES de tocar la red — evita retener en memoria
+  // un archivo enorme (ej. una grabación sin comprimir desde el celular)
+  // mientras se sube, y le da al usuario feedback claro en vez de que la
+  // app se quede colgada o se cierre sola.
+  async function handleAudioSelect(f: File | null) {
+    setAudioError(null)
+    if (!f) return
+
+    const sizeMb = f.size / (1024 * 1024)
+    if (sizeMb > MAX_AUDIO_MB) {
+      setAudioError(`El archivo pesa ${sizeMb.toFixed(1)}MB. El máximo es ${MAX_AUDIO_MB}MB — probá con un MP3 comprimido en vez de un WAV sin comprimir.`)
+      return
+    }
+
+    setListeningAudioFile(f)
+    setAudioUploading(true)
+    try {
+      const fd = new FormData()
+      fd.append('audio', f)
+      const res  = await fetch('/api/exercises/upload-audio', { method: 'POST', body: fd })
+      const json = await res.json()
+      if (!res.ok) {
+        setAudioError(json.error ?? 'Error al subir el audio.')
+        setListeningAudioFile(null)
+        return
+      }
+      setListeningAudioUrl(json.url ?? '')
+    } catch (err: any) {
+      setAudioError(err?.message ?? 'Error de red al subir el audio. Probá de nuevo.')
+      setListeningAudioFile(null)
+    } finally {
+      setAudioUploading(false)
+    }
   }
 
   // ─── Render ────────────────────────────────────────────────────────────────
@@ -988,28 +1030,35 @@ export default function ExerciseEditor({ onAdd, onCancel }: ExerciseEditorProps)
               {/* Subir archivo */}
               <div>
                 <label className="label text-xs mb-1">Subir archivo de audio</label>
-                <label className="flex items-center gap-3 cursor-pointer rounded-lg border border-gray-200 px-3 py-2.5 hover:bg-gray-50 transition-colors">
+                <label className={`flex items-center gap-3 rounded-lg border border-gray-200 px-3 py-2.5 transition-colors ${audioUploading ? 'opacity-60 cursor-wait' : 'cursor-pointer hover:bg-gray-50'}`}>
                   <span className="text-xl">🎵</span>
                   <div className="flex-1 min-w-0">
-                    {listeningAudioFile
+                    {audioUploading
+                      ? <p className="text-sm text-gray-500">Subiendo audio…</p>
+                      : listeningAudioFile
                       ? <p className="text-sm text-gray-900 truncate">{listeningAudioFile.name}</p>
                       : <p className="text-sm text-gray-400">Elegir archivo MP3, M4A o WAV…</p>
                     }
                   </div>
                   <input
                     type="file"
-                    accept="audio/*"
+                    accept="audio/*,.mp3,.wav,.ogg,.m4a"
                     className="sr-only"
+                    disabled={audioUploading}
                     onChange={e => {
                       const f = e.target.files?.[0] ?? null
-                      setListeningAudioFile(f)
-                      if (f) setListeningAudioUrl('')
+                      handleAudioSelect(f)
+                      e.target.value = '' // permite volver a elegir el mismo archivo si hubo error
                     }}
                   />
                   <span className="text-xs text-purple-600 font-medium flex-shrink-0">
-                    {listeningAudioFile ? 'Cambiar' : 'Elegir'}
+                    {audioUploading ? <span className="inline-block w-3.5 h-3.5 border-2 border-purple-300 border-t-purple-600 rounded-full animate-spin" /> : listeningAudioFile ? 'Cambiar' : 'Elegir'}
                   </span>
                 </label>
+                {audioError && (
+                  <p className="text-xs text-red-600 mt-1.5">⚠️ {audioError}</p>
+                )}
+                <p className="text-[11px] text-gray-400 mt-1">Máx. {MAX_AUDIO_MB}MB</p>
               </div>
 
               <div className="flex items-center gap-2">
@@ -1206,10 +1255,10 @@ export default function ExerciseEditor({ onAdd, onCancel }: ExerciseEditorProps)
         </button>
         <button
           onClick={handleAdd}
-          disabled={previewCount === 0}
+          disabled={previewCount === 0 || audioUploading}
           className="btn-brand text-sm flex-1 disabled:opacity-40"
         >
-          + Agregar {previewCount > 0 ? previewCount : ''} pregunta{previewCount !== 1 ? 's' : ''} →
+          {audioUploading ? 'Subiendo audio…' : `+ Agregar ${previewCount > 0 ? previewCount : ''} pregunta${previewCount !== 1 ? 's' : ''} →`}
         </button>
       </div>
     </div>

@@ -65,11 +65,12 @@ export default async function AuditPage() {
                   const action  = ACTION_LABEL[log.action] ?? { label: log.action, color: 'bg-gray-100 text-gray-700' }
                   const section = TABLE_LABEL[log.table_name] ?? log.table_name
                   const fecha   = new Date(log.created_at).toLocaleString('es-AR', {
-                    day:    '2-digit',
-                    month:  '2-digit',
-                    year:   'numeric',
-                    hour:   '2-digit',
-                    minute: '2-digit',
+                    day:      '2-digit',
+                    month:    '2-digit',
+                    year:     'numeric',
+                    hour:     '2-digit',
+                    minute:   '2-digit',
+                    timeZone: 'America/Argentina/Buenos_Aires',
                   })
 
                   return (

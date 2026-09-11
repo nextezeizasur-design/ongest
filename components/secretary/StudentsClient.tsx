@@ -17,6 +17,8 @@ interface Student {
   course_name?: string
   course_id?: string
   cefr_code?: string
+  first_login_at?: string | null
+  last_seen_at?:   string | null
 }
 
 interface Course {
@@ -33,6 +35,20 @@ function calcAge(birth_date?: string): number | null {
   const m = today.getMonth() - dob.getMonth()
   if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) age--
   return age
+}
+
+function formatAccessDate(iso?: string | null): string {
+  if (!iso) return '—'
+  return new Date(iso).toLocaleDateString('es-AR', {
+    day: '2-digit', month: '2-digit', year: 'numeric',
+  })
+}
+
+function formatAccessDateTime(iso?: string | null): string {
+  if (!iso) return '—'
+  return new Date(iso).toLocaleString('es-AR', {
+    day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
+  })
 }
 
 export default function StudentsClient({ orgId }: { orgId: string }) {
@@ -211,7 +227,7 @@ export default function StudentsClient({ orgId }: { orgId: string }) {
           </div>
         ) : (
           <table className="table-base">
-            <thead><tr><th>Alumno</th><th>Edad</th><th>Nivel</th><th>Curso</th><th>Estado</th><th>Acciones</th></tr></thead>
+            <thead><tr><th>Alumno</th><th>Edad</th><th>Nivel</th><th>Curso</th><th>Estado</th><th>Primer acceso</th><th>Último acceso</th><th>Acciones</th></tr></thead>
             <tbody>
               {filtered.map(s => {
                 const age = s.age ?? calcAge(s.birth_date)
@@ -233,6 +249,18 @@ export default function StudentsClient({ orgId }: { orgId: string }) {
                     <td>{s.cefr_code ? <span className={`cefr-pill cefr-${s.cefr_code}`}>{s.cefr_code}</span> : <span className="text-gray-400 text-xs">—</span>}</td>
                     <td className="text-gray-600 max-w-[140px] truncate">{s.course_name ?? <span className="text-amber-600 text-xs">Sin curso</span>}</td>
                     <td><Badge variant={s.is_active ? 'green' : 'gray'}>{s.is_active ? 'Activo' : 'Inactivo'}</Badge></td>
+                    <td className="text-xs">
+                      {s.first_login_at
+                        ? <span className="text-gray-500">{formatAccessDate(s.first_login_at)}</span>
+                        : <span className="text-amber-600 font-medium">Nunca ingresó</span>
+                      }
+                    </td>
+                    <td className="text-xs">
+                      {s.last_seen_at
+                        ? <span className="text-gray-500">{formatAccessDateTime(s.last_seen_at)}</span>
+                        : <span className="text-gray-300">—</span>
+                      }
+                    </td>
                     <td>
                       <div className="flex gap-3">
                         <button onClick={() => openEdit(s)} className="text-xs font-medium" style={{color:'#642f8d'}}>Editar</button>

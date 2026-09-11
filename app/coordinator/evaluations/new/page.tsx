@@ -100,6 +100,16 @@ export default function NewEvaluationPage() {
   const [skillSummary,    setSkillSummary]    = useState<Record<string, number>>({})
   const fileRef = useRef<HTMLInputElement>(null)
 
+  // ── Autoguardado (borrador local) ──
+  // Guarda automáticamente el progreso en localStorage para no perder la
+  // evaluación completa si el navegador se cierra/recarga inesperadamente
+  // (por ejemplo al elegir un archivo de audio para un ejercicio de listening).
+  const DRAFT_KEY = 'ongest_new_evaluation_draft_v1'
+  const [draftPending,   setDraftPending]   = useState<any | null>(null)
+  const [draftChecked,   setDraftChecked]   = useState(false)
+  const [draftSavedAt,   setDraftSavedAt]   = useState<string | null>(null)
+  const autosaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
   useEffect(() => {
     async function loadCourses() {
       const { data: { user } } = await supabase.auth.getUser()
@@ -123,6 +133,79 @@ export default function NewEvaluationPage() {
     }
     detectRole()
   }, [])
+
+  // ── Autoguardado: detectar borrador existente al montar ──
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(DRAFT_KEY)
+      if (raw) {
+        const parsed = JSON.parse(raw)
+        const hasContent = (parsed?.title?.trim()) || (parsed?.questions?.length > 0)
+        if (hasContent) setDraftPending(parsed)
+      }
+    } catch {
+      // localStorage no disponible (modo privado, cuota, etc.) — se ignora,
+      // simplemente no habrá recuperación de borrador.
+    } finally {
+      setDraftChecked(true)
+    }
+  }, [])
+
+  // ── Autoguardado: persistir cambios (debounced) ──
+  useEffect(() => {
+    if (!draftChecked) return       // todavía no revisamos si hay un borrador previo
+    if (draftPending) return        // hay un borrador sin resolver — no lo pisemos todavía
+    if (savedEvalId) return         // ya se guardó en la base — el borrador local ya no aplica
+
+    if (autosaveTimer.current) clearTimeout(autosaveTimer.current)
+    autosaveTimer.current = setTimeout(() => {
+      try {
+        const snapshot = {
+          title, description, instructions, cefrLevel, evalType, timeLimit, passScore,
+          availFrom, availUntil, isAdaptive, adaptiveLength, selectedCourses, questions,
+          savedAt: new Date().toISOString(),
+        }
+        // Sin contenido real todavía — no vale la pena guardar un borrador vacío.
+        if (!snapshot.title.trim() && snapshot.questions.length === 0) return
+        window.localStorage.setItem(DRAFT_KEY, JSON.stringify(snapshot))
+        setDraftSavedAt(snapshot.savedAt)
+      } catch {
+        // Cuota de localStorage excedida u otro error — no interrumpe la edición.
+      }
+    }, 1200)
+    return () => { if (autosaveTimer.current) clearTimeout(autosaveTimer.current) }
+  }, [
+    draftChecked, draftPending, savedEvalId,
+    title, description, instructions, cefrLevel, evalType, timeLimit, passScore,
+    availFrom, availUntil, isAdaptive, adaptiveLength, selectedCourses, questions,
+  ])
+
+  function restoreDraft() {
+    if (!draftPending) return
+    setTitle(draftPending.title ?? '')
+    setDescription(draftPending.description ?? '')
+    setInstructions(draftPending.instructions ?? '')
+    setCefrLevel(draftPending.cefrLevel ?? '')
+    setEvalType(draftPending.evalType ?? 'multiple_choice')
+    setTimeLimit(draftPending.timeLimit ?? 30)
+    setPassScore(draftPending.passScore ?? 60)
+    setAvailFrom(draftPending.availFrom ?? '')
+    setAvailUntil(draftPending.availUntil ?? '')
+    setIsAdaptive(!!draftPending.isAdaptive)
+    setAdaptiveLength(draftPending.adaptiveLength ?? 10)
+    setSelectedCourses(draftPending.selectedCourses ?? [])
+    setQuestions(draftPending.questions ?? [])
+    setDraftPending(null)
+  }
+
+  function discardDraft() {
+    try { window.localStorage.removeItem(DRAFT_KEY) } catch {}
+    setDraftPending(null)
+  }
+
+  function clearDraft() {
+    try { window.localStorage.removeItem(DRAFT_KEY) } catch {}
+  }
 
   async function removeQuestion(id: string) {
     const ok = await confirm({
@@ -359,6 +442,9 @@ export default function NewEvaluationPage() {
       return
     }
 
+    // Ya se guardó en la base de datos — el borrador local ya no hace falta.
+    clearDraft()
+
     // ── Toast + redirect ──
     if (status === 'published') {
       toast.success('Evaluación publicada correctamente', `"${title.trim()}" ya está disponible para los alumnos.`)
@@ -407,7 +493,12 @@ export default function NewEvaluationPage() {
           </a>
           <h1 className="text-[15px] font-semibold text-gray-900">Nueva evaluación</h1>
         </div>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-3">
+          {draftSavedAt && !draftPending && (
+            <span className="text-[11px] text-gray-400 hidden sm:inline">
+              💾 Guardado automático activo
+            </span>
+          )}
           <button onClick={() => handleSave('draft')} disabled={saving} className="btn-outline">
             Guardar borrador
           </button>
@@ -432,6 +523,26 @@ export default function NewEvaluationPage() {
 
       <div className="flex flex-1 overflow-hidden">
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
+
+          {draftPending && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 flex flex-wrap items-center justify-between gap-3">
+              <span>
+                📝 Encontramos un borrador sin guardar de una evaluación anterior
+                {draftPending.savedAt && (
+                  <> (última edición: {new Date(draftPending.savedAt).toLocaleString('es-AR', {
+                    day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
+                    timeZone: 'America/Argentina/Buenos_Aires',
+                  })})</>
+                )}
+                {draftPending.questions?.length > 0 && <> — {draftPending.questions.length} pregunta(s)</>}.
+                ¿Querés recuperarlo?
+              </span>
+              <span className="flex gap-2 flex-shrink-0">
+                <button onClick={restoreDraft} className="btn-brand !py-1.5 !px-3 text-xs">Recuperar</button>
+                <button onClick={discardDraft} className="btn-outline !py-1.5 !px-3 text-xs">Descartar</button>
+              </span>
+            </div>
+          )}
 
           {error && (
             <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>

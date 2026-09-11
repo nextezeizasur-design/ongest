@@ -11,6 +11,22 @@ export const dynamic   = 'force-dynamic'
 export const revalidate = 0
 export const metadata  = { title: 'Reporte de alumnos' }
 
+const AR_TZ = 'America/Argentina/Buenos_Aires'
+
+function formatAccessDate(iso?: string | null): string {
+  if (!iso) return '—'
+  return new Date(iso).toLocaleDateString('es-AR', {
+    day: '2-digit', month: '2-digit', year: 'numeric', timeZone: AR_TZ,
+  })
+}
+
+function formatAccessDateTime(iso?: string | null): string {
+  if (!iso) return '—'
+  return new Date(iso).toLocaleString('es-AR', {
+    day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: AR_TZ,
+  })
+}
+
 export default async function TeacherStudentsPage() {
   const profile  = await requireRole(['director', 'coordinator', 'teacher'] as any)
   const supabase = await createClient()
@@ -30,7 +46,7 @@ export default async function TeacherStudentsPage() {
   const { data: enrollments } = courseIds.length > 0
     ? await sb
         .from('enrollments')
-        .select('course_id, profiles(id, first_name, last_name, email, is_active)')
+        .select('course_id, profiles(id, first_name, last_name, email, is_active, first_login_at, last_seen_at)')
         .in('course_id', courseIds)
     : { data: [] }
 
@@ -132,6 +148,8 @@ export default async function TeacherStudentsPage() {
                           <th className="text-center px-4 py-3 font-semibold text-gray-600 text-xs uppercase tracking-wide">Exámenes</th>
                           <th className="text-center px-4 py-3 font-semibold text-gray-600 text-xs uppercase tracking-wide">Aprobados</th>
                           <th className="text-center px-4 py-3 font-semibold text-gray-600 text-xs uppercase tracking-wide">Promedio</th>
+                          <th className="text-left px-4 py-3 font-semibold text-gray-600 text-xs uppercase tracking-wide">Primer acceso</th>
+                          <th className="text-left px-4 py-3 font-semibold text-gray-600 text-xs uppercase tracking-wide">Último acceso</th>
                           <th className="text-right px-5 py-3 font-semibold text-gray-600 text-xs uppercase tracking-wide">Acción</th>
                         </tr>
                       </thead>
@@ -172,6 +190,18 @@ export default async function TeacherStudentsPage() {
                                 ) : (
                                   <span className="text-gray-300">—</span>
                                 )}
+                              </td>
+                              <td className="px-4 py-3">
+                                {student.first_login_at
+                                  ? <span className="text-xs text-gray-500">{formatAccessDate(student.first_login_at)}</span>
+                                  : <span className="text-xs text-amber-600 font-medium">Nunca ingresó</span>
+                                }
+                              </td>
+                              <td className="px-4 py-3">
+                                {student.last_seen_at
+                                  ? <span className="text-xs text-gray-500">{formatAccessDateTime(student.last_seen_at)}</span>
+                                  : <span className="text-xs text-gray-300">—</span>
+                                }
                               </td>
                               <td className="px-5 py-3 text-right">
                                 <Link

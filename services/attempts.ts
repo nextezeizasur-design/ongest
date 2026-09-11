@@ -11,7 +11,7 @@ export async function getStudentAttempts(studentId: string) {
     .from('attempts')
     .select('*')
     .eq('student_id', studentId)
-    .in('status', ['submitted', 'graded', 'timed_out'])
+    .in('status', ['submitted', 'graded', 'timed_out', 'flagged'])
     .order('created_at', { ascending: false })
 
   // 🔒 Un intento 'graded' puede haber quedado así por auto-grade
@@ -75,7 +75,7 @@ export async function getAttemptsByEvaluation(evaluationId: string) {
     .from('attempts')
     .select('*, profiles!attempts_student_id_fkey(first_name, last_name, email)')
     .eq('evaluation_id', evaluationId)
-    .in('status', ['submitted', 'graded', 'timed_out'])
+    .in('status', ['submitted', 'graded', 'timed_out', 'flagged'])
     .order('submitted_at', { ascending: false })
 
   return { data: (data ?? []) as Attempt[], error }

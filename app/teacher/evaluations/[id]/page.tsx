@@ -125,7 +125,10 @@ export default async function TeacherEvaluationDetail({
     sb.from('attempts')
       .select('*, profiles!attempts_student_id_fkey(first_name, last_name, email)')
       .eq('evaluation_id', id)
-      .in('status', ['submitted', 'graded', 'in_progress', 'timed_out'])
+      // 'flagged' = entregado automáticamente por el anti-trampa (3 cambios de
+      // pestaña). Faltaba en este filtro y por eso esos intentos desaparecían
+      // por completo de esta pantalla, aunque siguieran existiendo en la base.
+      .in('status', ['submitted', 'graded', 'in_progress', 'timed_out', 'flagged'])
       .order('submitted_at', { ascending: false }),
     sb.from('questions')
       .select('id, q_type, body, points, sort_order, explanation, options(id, body, is_correct, sort_order)')
@@ -387,9 +390,10 @@ export default async function TeacherEvaluationDetail({
                         <Badge variant={
                           att.status === 'graded'      ? 'green' :
                           att.status === 'submitted'   ? 'amber' :
-                          att.status === 'in_progress' ? 'blue'  : 'gray'
+                          att.status === 'in_progress' ? 'blue'  :
+                          att.status === 'flagged'     ? 'red'   : 'gray'
                         }>
-                          {ATTEMPT_STATUS_LABEL[att.status as keyof typeof ATTEMPT_STATUS_LABEL] ?? att.status}
+                          {att.status === 'flagged' ? '🚩 ' : ''}{ATTEMPT_STATUS_LABEL[att.status as keyof typeof ATTEMPT_STATUS_LABEL] ?? att.status}
                         </Badge>
                       </td>
                       <td>

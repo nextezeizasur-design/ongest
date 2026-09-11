@@ -33,12 +33,14 @@ export default async function EditEvaluationPage({
   const availFrom = ev.available_from ? new Date(ev.available_from) : null
   const notStartedYet = availFrom ? availFrom > now : false
 
-  // Verificar si tiene intentos
+  // Verificar si tiene intentos — 'flagged' incluido: es un intento real
+  // (entregado automáticamente por el anti-trampa), no debe tratarse como
+  // si la evaluación nunca se hubiera rendido.
   const { count: attemptCount } = await sb
     .from('attempts')
     .select('id', { count: 'exact', head: true })
     .eq('evaluation_id', id)
-    .in('status', ['submitted', 'graded', 'in_progress'])
+    .in('status', ['submitted', 'graded', 'in_progress', 'flagged'])
 
   const hasAttempts = (attemptCount ?? 0) > 0
   const canEdit = ev.status === 'draft' || (ev.status === 'published' && notStartedYet && !hasAttempts)

@@ -33,7 +33,10 @@ export default async function DirectorEvaluationDetail({
     sb.from('attempts')
       .select('*, results_published_at, profiles!attempts_student_id_fkey(first_name, last_name, email)')
       .eq('evaluation_id', id)
-      .in('status', ['submitted', 'graded', 'in_progress', 'timed_out'])
+      // 'flagged' = entregado automáticamente por el anti-trampa (3 cambios de
+      // pestaña). Faltaba en este filtro y por eso esos intentos desaparecían
+      // por completo de esta pantalla, aunque siguieran existiendo en la base.
+      .in('status', ['submitted', 'graded', 'in_progress', 'timed_out', 'flagged'])
       .order('submitted_at', { ascending: false }),
     sb.from('questions').select('id, q_type, body, points, sort_order').eq('evaluation_id', id).order('sort_order'),
     sb.from('evaluation_courses')
@@ -50,7 +53,7 @@ export default async function DirectorEvaluationDetail({
   const now           = new Date()
   const availFrom     = ev.available_from ? new Date(ev.available_from) : null
   const notStartedYet = availFrom ? availFrom > now : false
-  const attemptCount  = (attempts ?? []).filter((a: any) => ['submitted','graded','in_progress'].includes(a.status)).length
+  const attemptCount  = (attempts ?? []).filter((a: any) => ['submitted','graded','in_progress','flagged'].includes(a.status)).length
   const canEdit       = ev.status === 'draft' || (ev.status === 'published' && notStartedYet && attemptCount === 0)
   const st            = getEvalStatus({ status: ev.status, available_from: ev.available_from, available_until: ev.available_until })
   const completedAtts = (attempts ?? []).filter((a: any) => ['submitted','graded'].includes(a.status))
@@ -222,8 +225,8 @@ export default async function DirectorEvaluationDetail({
                       <td className="text-gray-600">{formatDuration(att.time_taken_sec)}</td>
                       <td>{att.score != null ? <ScoreBar score={att.score} /> : <span className="text-gray-400">—</span>}</td>
                       <td>
-                        <Badge variant={att.status === 'graded' ? 'green' : att.status === 'submitted' ? 'amber' : att.status === 'in_progress' ? 'blue' : 'gray'}>
-                          {ATTEMPT_STATUS_LABEL[att.status as keyof typeof ATTEMPT_STATUS_LABEL] ?? att.status}
+                        <Badge variant={att.status === 'graded' ? 'green' : att.status === 'submitted' ? 'amber' : att.status === 'in_progress' ? 'blue' : att.status === 'flagged' ? 'red' : 'gray'}>
+                          {att.status === 'flagged' ? '🚩 ' : ''}{ATTEMPT_STATUS_LABEL[att.status as keyof typeof ATTEMPT_STATUS_LABEL] ?? att.status}
                         </Badge>
                         {att.status === 'graded' && !att.results_published_at && (
                           <span className="block mt-1 text-[10px] font-medium text-amber-600">⏳ Sin publicar</span>

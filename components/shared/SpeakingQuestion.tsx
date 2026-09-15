@@ -364,6 +364,47 @@ export default function SpeakingQuestion({
     )
   }
 
+  // Error — el navegador denegó el permiso de micrófono (u otro fallo al grabar).
+  // Antes este estado no tenía ningún render: al alumno se le quedaba la pantalla
+  // en blanco, sin explicación ni forma de seguir. Ahora se le explica qué pasó
+  // y se le ofrece reintentar o pasar a escribir la respuesta.
+  if (state === 'error') {
+    return (
+      <div className="space-y-3">
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+          <div className="flex items-start gap-3">
+            <span className="text-xl flex-shrink-0">🎤</span>
+            <div>
+              <p className="text-sm font-semibold text-red-800 mb-1">
+                No pudimos acceder a tu micrófono
+              </p>
+              <p className="text-sm text-red-700">
+                Puede que hayas bloqueado el permiso de micrófono para este sitio.
+                Fijate en el ícono de candado o micrófono en la barra de direcciones
+                de tu navegador, permitilo ahí, y volvé a intentar.
+              </p>
+            </div>
+          </div>
+        </div>
+        <div className="flex gap-2 flex-wrap">
+          <button
+            onClick={() => setState('idle')}
+            className="flex-1 py-2.5 text-sm rounded-xl font-medium text-white"
+            style={{ backgroundColor: '#642f8d' }}
+          >
+            Intentar de nuevo
+          </button>
+          <button
+            onClick={() => setUseTextFallback(true)}
+            className="flex-1 py-2.5 text-sm border border-gray-300 rounded-xl text-gray-600 hover:bg-gray-50 transition-colors"
+          >
+            Escribir mi respuesta
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   // Idle — listo para grabar
   if (state === 'idle') {
     return (
@@ -402,10 +443,19 @@ export default function SpeakingQuestion({
           </div>
         )}
 
+        {/* Instrucciones paso a paso — antes solo decía "hacé click", sin explicar
+            el permiso del micrófono ni qué esperar después de grabar. */}
         <div className="bg-purple-50 border border-purple-100 rounded-xl px-4 py-3 text-sm text-purple-800">
-          <p className="font-medium mb-1">Respuesta oral</p>
-          <p>Hacé click en el botón para grabar tu respuesta en voz alta. Tenés <strong>{timeLimitSec} segundos</strong>.</p>
-          <p className="text-xs text-purple-600 mt-1">🎙 Tu voz será grabada para que el docente pueda escucharla.</p>
+          <p className="font-medium mb-2">Respuesta oral — cómo grabar</p>
+          <ol className="list-decimal list-inside space-y-1">
+            <li>Tocá el botón violeta de abajo.</li>
+            <li>El navegador te va a pedir permiso para usar el micrófono — tocá <strong>"Permitir"</strong>.</li>
+            <li>Cuando el botón se ponga rojo, ya estás grabando: hablá en inglés, fuerte y cerca del micrófono.</li>
+            <li>Tocá el botón rojo para terminar, o se corta solo al llegar a 0.</li>
+          </ol>
+          <p className="text-xs text-purple-600 mt-2">
+            🎙 Tenés <strong>{timeLimitSec} segundos</strong>. Tu voz queda grabada para que el docente la escuche.
+          </p>
         </div>
 
         <button
@@ -471,12 +521,22 @@ export default function SpeakingQuestion({
             </span>
             <div className="flex items-center gap-2">
               <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-              <span className="text-sm font-mono font-bold text-red-600">
+              <span className={`text-sm font-mono font-bold ${timeLeft <= 10 ? 'text-red-800' : 'text-red-600'}`}>
                 {timeLeft}s restantes
               </span>
             </div>
           </div>
         </button>
+
+        {/* Aviso cuando quedan pocos segundos — para que el alumno redondee
+            la idea a tiempo en vez de que la grabación se corte a mitad de frase. */}
+        {timeLeft <= 10 && (
+          <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-2.5 text-center">
+            <p className="text-sm font-medium text-red-700">
+              ⏱ ¡Se acaba el tiempo! Redondeá tu idea y tocá para detener.
+            </p>
+          </div>
+        )}
 
         <div className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 min-h-[80px]">
           <p className="text-xs text-gray-400 mb-2 uppercase tracking-wide font-medium">
@@ -490,6 +550,10 @@ export default function SpeakingQuestion({
             )}
           </p>
         </div>
+
+        <p className="text-xs text-center text-gray-400">
+          No cierres ni recargues esta página mientras grabás.
+        </p>
       </div>
     )
   }
@@ -501,6 +565,7 @@ export default function SpeakingQuestion({
         <div className="w-12 h-12 border-4 border-t-transparent rounded-full animate-spin"
           style={{ borderColor: '#642f8d', borderTopColor: 'transparent' }} />
         <p className="text-sm text-gray-500">Guardando tu grabación…</p>
+        <p className="text-xs text-gray-400">No cierres ni recargues la página, puede tardar unos segundos.</p>
       </div>
     )
   }

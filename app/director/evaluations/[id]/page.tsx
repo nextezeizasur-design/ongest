@@ -234,9 +234,13 @@ export default async function DirectorEvaluationDetail({
                       </td>
                       {hasOpenQs && (
                         <td>
-                          {['submitted','graded'].includes(att.status) && (
+                          {/* 'timed_out' y 'flagged' también quedan con respuestas
+                              guardadas y pueden necesitar corrección manual — antes
+                              solo 'submitted'/'graded' mostraban el link y el
+                              intento quedaba inaccesible desde esta pantalla. */}
+                          {['submitted','graded','timed_out','flagged'].includes(att.status) && (
                             <a href={`/coordinator/results/${att.id}`} className="text-xs font-medium" style={{ color: '#642f8d' }}>
-                              {att.status === 'submitted' ? 'Corregir →' : 'Ver detalle'}
+                              {att.status === 'graded' ? 'Ver detalle' : 'Corregir →'}
                             </a>
                           )}
                         </td>

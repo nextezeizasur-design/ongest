@@ -397,7 +397,10 @@ export default async function TeacherEvaluationDetail({
                         </Badge>
                       </td>
                       <td>
-                        {att.status === 'submitted' ? (
+                        {/* 'timed_out' y 'flagged' también pueden tener respuestas
+                            para corregir — antes solo 'submitted'/'graded' mostraban
+                            un link, y el resto quedaba con un guión sin salida. */}
+                        {['submitted','timed_out','flagged'].includes(att.status) ? (
                           <a href={`/teacher/results/${att.id}`} className="text-xs font-medium" style={{ color: '#642f8d' }}>
                             Corregir →
                           </a>

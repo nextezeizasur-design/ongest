@@ -96,6 +96,12 @@ export default async function TeacherEvaluations() {
                             className="text-xs font-medium" style={{ color:'#642f8d' }}>
                             Ver
                           </a>
+                          {ev.status === 'draft' && (
+                            <a href={`/teacher/evaluations/${ev.id}/edit`}
+                              className="text-xs font-medium text-amber-600 hover:text-amber-800">
+                              ✏️ Editar
+                            </a>
+                          )}
                           <a href={`/teacher/evaluations/${ev.id}/assets`}
                             className="text-xs text-gray-500 hover:text-gray-700"
                             title="Subir PDF y audio">

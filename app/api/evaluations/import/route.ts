@@ -2,6 +2,11 @@
 // Usa Claude API (claude-sonnet-4-6) para parsear ejercicios desde PDF de Macmillan u otras editoriales.
 // Costo estimado: ~$0.015 USD por PDF. 80 PDFs/mes ≈ $1.20 USD/mes.
 
+// Plan Hobby de Vercel: sin esto, la función se corta a los 10s por defecto.
+// Un PDF con varias secciones (8+ ejercicios) puede tardar más que eso en que
+// Claude arme el JSON completo — 60s es el máximo permitido en Hobby sin Fluid Compute.
+export const maxDuration = 60
+
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { cookies } from 'next/headers'

@@ -38,7 +38,7 @@ export default async function DirectorEvaluationDetail({
       // por completo de esta pantalla, aunque siguieran existiendo en la base.
       .in('status', ['submitted', 'graded', 'in_progress', 'timed_out', 'flagged'])
       .order('submitted_at', { ascending: false }),
-    sb.from('questions').select('id, q_type, body, points, sort_order').eq('evaluation_id', id).order('sort_order'),
+    sb.from('questions').select('id, q_type, body, points, sort_order, options(id, body, is_correct)').eq('evaluation_id', id).order('sort_order'),
     sb.from('evaluation_courses')
       .select('courses(id, name, cefr_levels(code))')
       .eq('evaluation_id', id),
@@ -67,6 +67,11 @@ export default async function DirectorEvaluationDetail({
 
   const BADGE: Record<string, 'purple'|'green'|'amber'|'gray'|'blue'> = {
     active: 'purple', upcoming: 'amber', closed: 'green', draft: 'gray', published: 'blue',
+  }
+
+  const Q_TYPE_LABEL: Record<string, string> = {
+    multiple_choice: 'Opción múltiple', true_false: 'Verdadero/Falso',
+    short_answer: 'Respuesta corta', essay: 'Desarrollo', speaking: 'Speaking',
   }
 
   return (
@@ -145,6 +150,52 @@ export default async function DirectorEvaluationDetail({
             <strong>{pendingPublish.length} resultado{pendingPublish.length > 1 ? 's' : ''}</strong> ya corregido{pendingPublish.length > 1 ? 's' : ''} esperando publicación — el alumno no los ve hasta que los publiques.
           </AlertBanner>
         )}
+
+        {/* Contenido del examen — antes esta pantalla solo mostraba el conteo
+            de preguntas ("Preguntas: 40") pero nunca el armado en sí. Para
+            verlo había que entrar a "Editar", que en evaluaciones publicadas
+            con intentos ya rendidos queda bloqueado y rebota de nuevo acá,
+            sin explicación. Esta vista es de solo lectura, disponible siempre,
+            sea borrador o publicada. */}
+        <div className="card">
+          <h2 className="mb-3 text-sm font-semibold text-gray-900">
+            Contenido del examen ({(questions ?? []).length} pregunta{(questions ?? []).length !== 1 ? 's' : ''})
+          </h2>
+          {(!questions || questions.length === 0) ? (
+            <p className="text-sm text-gray-400">Esta evaluación todavía no tiene preguntas cargadas.</p>
+          ) : (
+            <div className="space-y-4">
+              {questions.map((q: any, i: number) => (
+                <div key={q.id} className="border-b border-gray-100 pb-4 last:border-0 last:pb-0">
+                  <div className="flex items-start gap-2">
+                    <span className="text-xs font-semibold text-gray-400 mt-0.5">{i + 1}.</span>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1 flex-wrap">
+                        <span className="badge badge-gray text-[10px]">
+                          {Q_TYPE_LABEL[q.q_type] ?? q.q_type}
+                        </span>
+                        <span className="text-xs text-gray-400">{q.points} pt{q.points !== 1 ? 's' : ''}</span>
+                      </div>
+                      <p className="text-sm text-gray-900">{q.body}</p>
+                      {Array.isArray(q.options) && q.options.length > 0 && (
+                        <ul className="mt-1.5 space-y-0.5">
+                          {q.options.map((o: any) => (
+                            <li
+                              key={o.id}
+                              className={`text-xs pl-3 ${o.is_correct ? 'text-green-700 font-medium' : 'text-gray-500'}`}
+                            >
+                              {o.is_correct ? '✓ ' : '· '}{o.body}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
 
         {/* Cursos asignados */}
         <div className="card">

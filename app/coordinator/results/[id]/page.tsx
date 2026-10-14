@@ -73,6 +73,45 @@ function TypeBadge({ type }: { type: string }) {
   )
 }
 
+// En MC Cloze, cada hueco es una pregunta aparte que repite el párrafo
+// completo. Esto separa la consigna de cierre ("Which word is correct for
+// gap (N)?") y resalta el número de hueco (N) dentro del párrafo, para que
+// se identifique cuál es sin tener que releer todo el texto.
+const CLOZE_GAP_REGEX = /Which word is correct for gap \((\d+)\)\s*\??/i
+
+function renderBodyBlocks(body: string) {
+  const blocks = body.split('\n\n').filter(Boolean)
+  const gapBlockIdx = blocks.findIndex(b => CLOZE_GAP_REGEX.test(b))
+  const gapMatch    = gapBlockIdx >= 0 ? blocks[gapBlockIdx].match(CLOZE_GAP_REGEX) : null
+  const gapToken    = gapMatch ? `(${gapMatch[1]})` : null
+
+  return blocks.map((block, bi) => {
+    if (bi === gapBlockIdx) {
+      return (
+        <p key={bi} className="inline-flex items-center gap-1.5 text-xs font-semibold text-purple-700 bg-purple-50 border border-purple-200 rounded-lg px-2.5 py-1 mb-3">
+          <span>👉</span>{block}
+        </p>
+      )
+    }
+    if (gapToken && block.includes(gapToken)) {
+      const parts = block.split(gapToken)
+      return (
+        <p key={bi} className="text-sm font-medium text-gray-900 mb-3 leading-relaxed">
+          {parts.map((part, pi) => (
+            <span key={pi}>
+              {part}
+              {pi < parts.length - 1 && (
+                <mark className="bg-yellow-200 text-purple-800 font-bold rounded px-1">{gapToken}</mark>
+              )}
+            </span>
+          ))}
+        </p>
+      )
+    }
+    return <p key={bi} className="text-sm font-medium text-gray-900 mb-3 leading-relaxed">{block}</p>
+  })
+}
+
 // ── Enunciado según tipo — word_order/match como chips ────────────────────
 function QuestionBody({ body, type }: { body: string; type: string }) {
   if ((type === 'word_order' || type === 'match') && body.includes('/')) {
@@ -87,7 +126,7 @@ function QuestionBody({ body, type }: { body: string; type: string }) {
       </div>
     )
   }
-  return <p className="text-sm font-medium text-gray-900 mb-3 leading-relaxed">{body}</p>
+  return <>{renderBodyBlocks(body)}</>
 }
 
 export default function CoordinatorGradePage({ params }: { params: Promise<{ id: string }> }) {

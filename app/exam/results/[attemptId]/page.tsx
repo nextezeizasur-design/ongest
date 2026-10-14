@@ -9,6 +9,45 @@ import TopBar from '@/components/layout/TopBar'
 import Badge from '@/components/ui/Badge'
 import CertificateDownload from '@/components/shared/CertificateDownload'
 
+// En MC Cloze, cada hueco es una pregunta aparte que repite el párrafo
+// completo. Esto separa la consigna de cierre ("Which word is correct for
+// gap (N)?") y resalta el número de hueco (N) dentro del párrafo, para que
+// el alumno identifique cuál era sin tener que releer todo el texto.
+const CLOZE_GAP_REGEX = /Which word is correct for gap \((\d+)\)\s*\??/i
+
+function renderBodyBlocks(body: string) {
+  const blocks = body.split('\n\n').filter(Boolean)
+  const gapBlockIdx = blocks.findIndex(b => CLOZE_GAP_REGEX.test(b))
+  const gapMatch    = gapBlockIdx >= 0 ? blocks[gapBlockIdx].match(CLOZE_GAP_REGEX) : null
+  const gapToken    = gapMatch ? `(${gapMatch[1]})` : null
+
+  return blocks.map((block, bi) => {
+    if (bi === gapBlockIdx) {
+      return (
+        <p key={bi} className="inline-flex items-center gap-1.5 text-xs font-semibold text-purple-700 bg-purple-50 border border-purple-200 rounded-lg px-2.5 py-1 mt-1">
+          <span>👉</span>{block}
+        </p>
+      )
+    }
+    if (gapToken && block.includes(gapToken)) {
+      const parts = block.split(gapToken)
+      return (
+        <p key={bi} className="text-sm font-medium text-gray-900 mt-0.5">
+          {parts.map((part, pi) => (
+            <span key={pi}>
+              {part}
+              {pi < parts.length - 1 && (
+                <mark className="bg-yellow-200 text-purple-800 font-bold rounded px-1">{gapToken}</mark>
+              )}
+            </span>
+          ))}
+        </p>
+      )
+    }
+    return <p key={bi} className="text-sm font-medium text-gray-900 mt-0.5">{block}</p>
+  })
+}
+
 export default async function StudentResultPage({
   params,
 }: {
@@ -175,7 +214,7 @@ export default async function StudentResultPage({
                     <div className="flex items-start justify-between gap-3 mb-3">
                       <div className="flex-1">
                         <span className="text-xs text-gray-400">Pregunta {idx + 1}</span>
-                        <p className="text-sm font-medium text-gray-900 mt-0.5">{q.body}</p>
+                        {renderBodyBlocks(q.body)}
                       </div>
                       <div className="flex-shrink-0 text-right">
                         {isMC && (

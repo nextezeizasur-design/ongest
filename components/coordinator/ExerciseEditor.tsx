@@ -168,8 +168,11 @@ export default function ExerciseEditor({ onAdd, onCancel }: ExerciseEditorProps)
   const [audioUploading,      setAudioUploading]      = useState(false)
   const [audioError,          setAudioError]          = useState<string | null>(null)
   const MAX_AUDIO_MB = 50
+  // Banco de respuestas compartido para preguntas q_type 'match' — se carga
+  // una sola vez (a, b, c…) y cada pregunta de tipo Match apunta a un índice.
+  const [listeningMatchBank, setListeningMatchBank] = useState<string[]>(['', '', ''])
   const [listeningQuestions,  setListeningQuestions]  = useState<{
-    id: string; body: string; q_type: 'true_false' | 'multiple_choice' | 'short_answer'
+    id: string; body: string; q_type: 'true_false' | 'multiple_choice' | 'short_answer' | 'match'
     options: string[]; correct: number; answer: string
   }[]>([
     { id: uid(), body: '', q_type: 'true_false',       options: ['True', 'False'], correct: 0, answer: '' },
@@ -366,6 +369,23 @@ export default function ExerciseEditor({ onAdd, onCancel }: ExerciseEditorProps)
                 skill:       'listening',
                 points,
                 explanation: lq.answer.trim(),
+              }
+            }
+            if (lq.q_type === 'match') {
+              // Ojo: is_correct se calcula ANTES de filtrar vacíos, para que el
+              // índice de lq.correct siga apuntando a la misma respuesta aunque
+              // el banco tenga huecos (ítems borrados en el medio).
+              const bank = listeningMatchBank
+                .map((o, idx) => ({ body: o.trim(), is_correct: idx === lq.correct }))
+                .filter(o => o.body)
+              return {
+                id:          uid(),
+                body,
+                options:     bank,
+                q_type:      'multiple_choice' as const,
+                skill:       'listening',
+                points,
+                explanation: '',
               }
             }
             if (lq.q_type === 'multiple_choice') {
@@ -1258,6 +1278,39 @@ export default function ExerciseEditor({ onAdd, onCancel }: ExerciseEditorProps)
             </div>
           </div>
 
+          {/* Banco de respuestas para preguntas tipo Match — compartido por todas */}
+          {listeningQuestions.some(lq => lq.q_type === 'match') && (
+            <div>
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                Banco de respuestas (Match) — a, b, c…
+              </p>
+              <div className="rounded-xl border-2 border-dashed border-gray-200 p-3 space-y-1.5">
+                {listeningMatchBank.map((opt, oi) => (
+                  <div key={oi} className="flex items-center gap-2">
+                    <span className="text-xs text-gray-400 w-5 flex-shrink-0">{String.fromCharCode(97 + oi)})</span>
+                    <input type="text" value={opt}
+                      onChange={e => setListeningMatchBank(prev => prev.map((x, j) => j === oi ? e.target.value : x))}
+                      placeholder={`Respuesta ${String.fromCharCode(97 + oi)}`} className="input text-sm flex-1" />
+                    <button
+                      onClick={() => setListeningMatchBank(prev => prev.filter((_, j) => j !== oi))}
+                      disabled={listeningMatchBank.length <= 2}
+                      className="text-gray-300 hover:text-red-500 disabled:opacity-20 flex-shrink-0">
+                      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.5} className="h-4 w-4">
+                        <path d="M3 4h10M6 4V2h4v2M5 4v9h6V4"/>
+                      </svg>
+                    </button>
+                  </div>
+                ))}
+                <button
+                  onClick={() => setListeningMatchBank(prev => [...prev, ''])}
+                  className="text-xs text-purple-600 hover:text-purple-800"
+                >
+                  + Agregar respuesta
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Preguntas */}
           <div className="space-y-3">
             <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Preguntas</p>
@@ -1269,7 +1322,7 @@ export default function ExerciseEditor({ onAdd, onCancel }: ExerciseEditorProps)
                     rows={2}
                     value={lq.body}
                     onChange={e => setListeningQuestions(prev => prev.map((x, j) => j === i ? { ...x, body: e.target.value } : x))}
-                    placeholder="Ej: It's hot where Dimitra is staying now."
+                    placeholder={lq.q_type === 'match' ? 'Ej: What about a book?' : "Ej: It's hot where Dimitra is staying now."}
                     className="textarea text-sm flex-1"
                   />
                   <div className="flex flex-col gap-1 flex-shrink-0">
@@ -1283,6 +1336,7 @@ export default function ExerciseEditor({ onAdd, onCancel }: ExerciseEditorProps)
                       <option value="true_false">True / False</option>
                       <option value="multiple_choice">Múltiple opción</option>
                       <option value="short_answer">Respuesta corta</option>
+                      <option value="match">Match</option>
                     </select>
                     <button
                       onClick={() => setListeningQuestions(prev => prev.filter((_, j) => j !== i))}
@@ -1359,6 +1413,36 @@ export default function ExerciseEditor({ onAdd, onCancel }: ExerciseEditorProps)
                       placeholder="Respuesta correcta (referencia del docente)"
                       className="input text-xs w-full"
                     />
+                  </div>
+                )}
+
+                {/* Match — elige la respuesta correcta del banco compartido */}
+                {lq.q_type === 'match' && (
+                  <div className="pl-6 space-y-1">
+                    {listeningMatchBank.filter(o => o.trim()).length === 0 ? (
+                      <p className="text-xs text-amber-600">Cargá primero el banco de respuestas arriba ↑</p>
+                    ) : (
+                      listeningMatchBank.map((opt, oi) => opt.trim() && (
+                        <button
+                          key={oi}
+                          onClick={() => setListeningQuestions(prev => prev.map((x, j) => j === i ? { ...x, correct: oi } : x))}
+                          className={`w-full text-left flex items-center gap-2 px-2.5 py-1.5 rounded-lg border-2 text-xs transition-colors ${
+                            lq.correct === oi
+                              ? 'border-green-500 bg-green-50 text-green-700 font-medium'
+                              : 'border-gray-200 text-gray-500 hover:border-gray-300'
+                          }`}
+                        >
+                          <span className="flex-shrink-0 w-4 h-4 rounded-full border-2 flex items-center justify-center">
+                            {lq.correct === oi && (
+                              <svg viewBox="0 0 8 8" fill="none" stroke="currentColor" strokeWidth={2} className="h-2 w-2">
+                                <path d="M1.5 4l2 2L6.5 2"/>
+                              </svg>
+                            )}
+                          </span>
+                          {String.fromCharCode(97 + oi)}) {opt}
+                        </button>
+                      ))
+                    )}
                   </div>
                 )}
               </div>

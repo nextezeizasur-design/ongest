@@ -141,8 +141,13 @@ export default function ExerciseEditor({ onAdd, onCancel }: ExerciseEditorProps)
   const [readingParagraphs, setReadingParagraphs] = useState<{ id: string; label: string; text: string }[]>([
     { id: uid(), label: '', text: '' },
   ])
-  const [readingQuestions, setReadingQuestions] = useState<{ id: string; body: string; q_type: 'multiple_choice' | 'short_answer'; options: string[]; correct: number; answer: string }[]>([
-    { id: uid(), body: '', q_type: 'short_answer', options: ['', '', '', ''], correct: 0, answer: '' },
+  const [readingQuestions, setReadingQuestions] = useState<{
+    id: string; body: string; q_type: 'multiple_choice' | 'short_answer' | 'underline' | 'true_false'
+    options: string[]; correct: number; answer: string
+    // Solo para q_type 'underline' — elegir entre 2 alternativas y continuar la oración
+    opt1: string; opt2: string; after: string
+  }[]>([
+    { id: uid(), body: '', q_type: 'short_answer', options: ['', '', '', ''], correct: 0, answer: '', opt1: '', opt2: '', after: '' },
   ])
   const [readingHasQuestions, setReadingHasQuestions] = useState(true)
 
@@ -268,7 +273,7 @@ export default function ExerciseEditor({ onAdd, onCancel }: ExerciseEditorProps)
 
         if (readingHasQuestions) {
           // Preguntas de comprensión
-          for (const rq of readingQuestions.filter(q => q.body.trim())) {
+          for (const rq of readingQuestions.filter(q => q.q_type === 'underline' ? (q.opt1.trim() && q.opt2.trim()) : q.body.trim())) {
             const contextBody = `[Reading: ${readingTitle || 'text above'}]\n${rq.body.trim()}`
             if (rq.q_type === 'multiple_choice') {
               const opts = rq.options.filter(o => o.trim())
@@ -276,6 +281,33 @@ export default function ExerciseEditor({ onAdd, onCancel }: ExerciseEditorProps)
                 id:          uid(),
                 body:        contextBody,
                 options:     opts.map((o, i) => ({ body: o.trim(), is_correct: i === rq.correct })),
+                q_type:      'multiple_choice',
+                skill:       'reading',
+                points,
+                explanation: '',
+              })
+            } else if (rq.q_type === 'underline') {
+              const underlineBody = `[Reading: ${readingTitle || 'text above'}]\n${[rq.body.trim(), `${rq.opt1} / ${rq.opt2}`, rq.after.trim()].filter(Boolean).join(' ')}`
+              qs.push({
+                id:          uid(),
+                body:        underlineBody,
+                options:     [
+                  { body: rq.opt1.trim(), is_correct: rq.correct === 0 },
+                  { body: rq.opt2.trim(), is_correct: rq.correct === 1 },
+                ],
+                q_type:      'multiple_choice',
+                skill:       'reading',
+                points,
+                explanation: '',
+              })
+            } else if (rq.q_type === 'true_false') {
+              qs.push({
+                id:          uid(),
+                body:        contextBody,
+                options:     [
+                  { body: 'True',  is_correct: rq.correct === 0 },
+                  { body: 'False', is_correct: rq.correct === 1 },
+                ],
                 q_type:      'multiple_choice',
                 skill:       'reading',
                 points,
@@ -502,7 +534,7 @@ export default function ExerciseEditor({ onAdd, onCancel }: ExerciseEditorProps)
   const previewCount = exType === 'writing' ? 1
     : exType === 'match' ? matchLeft.filter((l, i) => l.trim() && matchRight[i]?.trim()).length
     : exType === 'underline' ? underlineItems.filter(i => i.opt1.trim() && i.opt2.trim()).length
-    : exType === 'reading' ? (readingHasQuestions ? readingQuestions.filter(q => q.body.trim()).length : 1)
+    : exType === 'reading' ? (readingHasQuestions ? readingQuestions.filter(q => q.q_type === 'underline' ? (q.opt1.trim() && q.opt2.trim()) : q.body.trim()).length : 1)
     : exType === 'listening' ? listeningQuestions.filter(q => q.body.trim()).length
     : exType === 'passive' ? passiveItems.filter(i => i.active.trim() && i.subject.trim()).length
     : exType === 'mc_cloze' ? (clozeText.trim() ? clozeItems.filter(i => i.a.trim()).length : 0)
@@ -1002,7 +1034,7 @@ export default function ExerciseEditor({ onAdd, onCancel }: ExerciseEditorProps)
                       rows={2}
                       value={rq.body}
                       onChange={e => setReadingQuestions(prev => prev.map((x, j) => j === i ? { ...x, body: e.target.value } : x))}
-                      placeholder="Ej: What will be on the first floor of the living towers?"
+                      placeholder={rq.q_type === 'underline' ? 'Texto antes (opcional)…' : 'Ej: What will be on the first floor of the living towers?'}
                       className="textarea text-sm flex-1"
                     />
                     <div className="flex flex-col gap-1 flex-shrink-0">
@@ -1010,12 +1042,14 @@ export default function ExerciseEditor({ onAdd, onCancel }: ExerciseEditorProps)
                       <select
                         value={rq.q_type}
                         onChange={e => setReadingQuestions(prev => prev.map((x, j) =>
-                          j === i ? { ...x, q_type: e.target.value as 'multiple_choice' | 'short_answer' } : x
+                          j === i ? { ...x, q_type: e.target.value as 'multiple_choice' | 'short_answer' | 'underline' | 'true_false' } : x
                         ))}
                         className="input text-xs w-36"
                       >
                         <option value="short_answer">Respuesta corta</option>
                         <option value="multiple_choice">Múltiple opción</option>
+                        <option value="true_false">True / False</option>
+                        <option value="underline">Elegir alternativa</option>
                       </select>
                       <button
                         onClick={() => setReadingQuestions(prev => prev.filter((_, j) => j !== i))}
@@ -1026,6 +1060,30 @@ export default function ExerciseEditor({ onAdd, onCancel }: ExerciseEditorProps)
                       </button>
                     </div>
                   </div>
+
+                  {/* True / False */}
+                  {rq.q_type === 'true_false' && (
+                    <div className="pl-6 flex gap-4">
+                      {['True', 'False'].map((opt, oi) => (
+                        <button
+                          key={oi}
+                          onClick={() => setReadingQuestions(prev => prev.map((x, j) => j === i ? { ...x, correct: oi } : x))}
+                          className={`flex items-center gap-1.5 text-sm px-3 py-1 rounded-lg border-2 transition-colors ${
+                            rq.correct === oi
+                              ? 'border-green-500 bg-green-50 text-green-700 font-medium'
+                              : 'border-gray-200 text-gray-500 hover:border-gray-300'
+                          }`}
+                        >
+                          {rq.correct === oi && (
+                            <svg viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth={2} className="h-3 w-3">
+                              <path d="M2 5l2 2L8 2.5"/>
+                            </svg>
+                          )}
+                          {opt}
+                        </button>
+                      ))}
+                    </div>
+                  )}
 
                   {/* Múltiple opción */}
                   {rq.q_type === 'multiple_choice' && (
@@ -1070,12 +1128,57 @@ export default function ExerciseEditor({ onAdd, onCancel }: ExerciseEditorProps)
                       />
                     </div>
                   )}
+
+                  {/* Elegir alternativa (underline) — 2 opciones + continúa la oración */}
+                  {rq.q_type === 'underline' && (
+                    <div className="pl-6 flex items-center gap-2 flex-wrap">
+                      <button
+                        onClick={() => setReadingQuestions(prev => prev.map((x, j) => j === i ? { ...x, correct: 0 } : x))}
+                        className={`flex-shrink-0 w-4 h-4 rounded-full border-2 flex items-center justify-center transition-colors ${
+                          rq.correct === 0 ? 'border-green-500 bg-green-500' : 'border-gray-300 hover:border-green-400'
+                        }`}
+                        title="Marcar como correcta"
+                      >
+                        {rq.correct === 0 && (
+                          <svg viewBox="0 0 8 8" fill="none" stroke="white" strokeWidth={2} className="h-2 w-2">
+                            <path d="M1.5 4l2 2L6.5 2"/>
+                          </svg>
+                        )}
+                      </button>
+                      <input type="text" value={rq.opt1}
+                        onChange={e => setReadingQuestions(prev => prev.map((x, j) => j === i ? { ...x, opt1: e.target.value } : x))}
+                        placeholder="Opción 1" className={`input text-xs w-24 ${rq.correct === 0 ? 'border-green-200 bg-green-50' : ''}`} />
+
+                      <span className="text-gray-400 text-xs">/</span>
+
+                      <button
+                        onClick={() => setReadingQuestions(prev => prev.map((x, j) => j === i ? { ...x, correct: 1 } : x))}
+                        className={`flex-shrink-0 w-4 h-4 rounded-full border-2 flex items-center justify-center transition-colors ${
+                          rq.correct === 1 ? 'border-green-500 bg-green-500' : 'border-gray-300 hover:border-green-400'
+                        }`}
+                        title="Marcar como correcta"
+                      >
+                        {rq.correct === 1 && (
+                          <svg viewBox="0 0 8 8" fill="none" stroke="white" strokeWidth={2} className="h-2 w-2">
+                            <path d="M1.5 4l2 2L6.5 2"/>
+                          </svg>
+                        )}
+                      </button>
+                      <input type="text" value={rq.opt2}
+                        onChange={e => setReadingQuestions(prev => prev.map((x, j) => j === i ? { ...x, opt2: e.target.value } : x))}
+                        placeholder="Opción 2" className={`input text-xs w-24 ${rq.correct === 1 ? 'border-green-200 bg-green-50' : ''}`} />
+
+                      <input type="text" value={rq.after}
+                        onChange={e => setReadingQuestions(prev => prev.map((x, j) => j === i ? { ...x, after: e.target.value } : x))}
+                        placeholder="…resto de la oración" className="input text-xs flex-1 min-w-[140px]" />
+                    </div>
+                  )}
                 </div>
               ))}
 
               <button
                 onClick={() => setReadingQuestions(prev => [...prev, {
-                  id: uid(), body: '', q_type: 'short_answer', options: ['', '', '', ''], correct: 0, answer: ''
+                  id: uid(), body: '', q_type: 'short_answer', options: ['', '', '', ''], correct: 0, answer: '', opt1: '', opt2: '', after: ''
                 }])}
                 className="text-xs text-purple-600 hover:text-purple-800"
               >

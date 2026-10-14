@@ -48,7 +48,7 @@ interface ExerciseEditorProps {
 const EXERCISE_TYPES: { type: ExerciseType; label: string; icon: string; desc: string }[] = [
   { type: 'match',     icon: '🔗', label: 'Match',          desc: 'Unir mitades de oraciones o definiciones con palabras' },
   { type: 'order',     icon: '🔀', label: 'Put in order',   desc: 'Ordenar palabras para formar preguntas u oraciones' },
-  { type: 'underline', icon: '✏️', label: 'Choose/Underline', desc: 'Elegir la palabra correcta entre dos opciones' },
+  { type: 'underline', icon: '✏️', label: 'Choose/Underline', desc: 'Elegir la palabra correcta entre 2 o 3 opciones' },
   { type: 'error',     icon: '🔍', label: 'Find the error', desc: 'Encontrar y corregir el error en cada oración' },
   { type: 'complete',  icon: '✍️', label: 'Complete',       desc: 'Completar oraciones con la palabra correcta' },
   { type: 'passive',   icon: '🔄', label: 'Active → Passive', desc: 'Transformar oraciones activas a pasivas usando un texto de referencia' },
@@ -124,12 +124,12 @@ export default function ExerciseEditor({ onAdd, onCancel }: ExerciseEditorProps)
     { id: uid(), active: '', subject: '', rest: '', answer: '' },
   ])
 
-  // Underline — cada ítem tiene dos opciones inline
+  // Underline — cada ítem tiene dos o tres opciones inline (opt3 es opcional)
   const [underlineItems, setUnderlineItems] = useState<{
-    id: string; before: string; opt1: string; opt2: string; correct: 0 | 1; after: string
+    id: string; before: string; opt1: string; opt2: string; opt3: string; correct: 0 | 1 | 2; after: string
   }[]>([
-    { id: uid(), before: 'He lives in', opt1: 'a', opt2: 'an', correct: 0, after: 'house in the city.' },
-    { id: uid(), before: '', opt1: '', opt2: '', correct: 0, after: '' },
+    { id: uid(), before: 'He lives in', opt1: 'a', opt2: 'an', opt3: '', correct: 0, after: 'house in the city.' },
+    { id: uid(), before: '', opt1: '', opt2: '', opt3: '', correct: 0, after: '' },
   ])
 
   // Writing — preguntas guía
@@ -214,15 +214,19 @@ export default function ExerciseEditor({ onAdd, onCancel }: ExerciseEditorProps)
         return underlineItems
           .filter(it => it.opt1.trim() && it.opt2.trim())
           .map(it => {
-            const fullBody = [it.before.trim(), `${it.opt1} / ${it.opt2}`, it.after.trim()]
+            const hasOpt3 = it.opt3.trim().length > 0
+            const choicesLabel = hasOpt3 ? `${it.opt1} / ${it.opt2} / ${it.opt3}` : `${it.opt1} / ${it.opt2}`
+            const fullBody = [it.before.trim(), choicesLabel, it.after.trim()]
               .filter(Boolean).join(' ')
+            const options = [
+              { body: it.opt1.trim(), is_correct: it.correct === 0 },
+              { body: it.opt2.trim(), is_correct: it.correct === 1 },
+            ]
+            if (hasOpt3) options.push({ body: it.opt3.trim(), is_correct: it.correct === 2 })
             return {
               id:          uid(),
               body:        fullBody,
-              options:     [
-                { body: it.opt1.trim(), is_correct: it.correct === 0 },
-                { body: it.opt2.trim(), is_correct: it.correct === 1 },
-              ],
+              options,
               q_type:      'multiple_choice' as const,
               skill,
               points,
@@ -688,7 +692,7 @@ export default function ExerciseEditor({ onAdd, onCancel }: ExerciseEditorProps)
       {exType === 'underline' && (
         <div className="space-y-2">
           <p className="text-xs text-gray-500 mb-2">
-            Escribí la oración dividida en: texto antes · opción 1 · opción 2 · texto después. Marcá cuál es la correcta.
+            Escribí la oración dividida en: texto antes · opciones (2 o 3) · texto después. Marcá cuál es la correcta. La opción 3 es opcional — dejala vacía si solo necesitás a/b.
           </p>
           {underlineItems.map((it, i) => (
             <div key={it.id} className="rounded-xl border border-gray-200 p-3 space-y-2">
@@ -737,6 +741,25 @@ export default function ExerciseEditor({ onAdd, onCancel }: ExerciseEditorProps)
                   onChange={e => setUnderlineItems(prev => prev.map((x, j) => j === i ? { ...x, opt2: e.target.value } : x))}
                   placeholder="Opción 2" className={`input text-sm w-28 ${it.correct === 1 ? 'border-green-300 bg-green-50' : ''}`} />
 
+                {/* Opción 3 (opcional) */}
+                <span className="text-gray-400 text-sm">/</span>
+                <button
+                  onClick={() => setUnderlineItems(prev => prev.map((x, j) => j === i ? { ...x, correct: 2 } : x))}
+                  className={`flex-shrink-0 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${
+                    it.correct === 2 ? 'border-green-500 bg-green-500' : 'border-gray-300 hover:border-green-400'
+                  }`}
+                  title="Marcar como correcta"
+                >
+                  {it.correct === 2 && (
+                    <svg viewBox="0 0 10 10" fill="none" stroke="white" strokeWidth={2} className="h-2.5 w-2.5">
+                      <path d="M2 5l2.5 2.5 3.5-4"/>
+                    </svg>
+                  )}
+                </button>
+                <input type="text" value={it.opt3}
+                  onChange={e => setUnderlineItems(prev => prev.map((x, j) => j === i ? { ...x, opt3: e.target.value } : x))}
+                  placeholder="Opción 3 (opcional)" className={`input text-sm w-28 ${it.correct === 2 ? 'border-green-300 bg-green-50' : ''}`} />
+
                 <input type="text" value={it.after}
                   onChange={e => setUnderlineItems(prev => prev.map((x, j) => j === i ? { ...x, after: e.target.value } : x))}
                   placeholder="…resto de la oración" className="input text-sm flex-1" />
@@ -751,7 +774,7 @@ export default function ExerciseEditor({ onAdd, onCancel }: ExerciseEditorProps)
             </div>
           ))}
           <button
-            onClick={() => setUnderlineItems(prev => [...prev, { id: uid(), before: '', opt1: '', opt2: '', correct: 0, after: '' }])}
+            onClick={() => setUnderlineItems(prev => [...prev, { id: uid(), before: '', opt1: '', opt2: '', opt3: '', correct: 0, after: '' }])}
             className="text-xs text-purple-600 hover:text-purple-800"
           >
             + Agregar oración
@@ -765,7 +788,9 @@ export default function ExerciseEditor({ onAdd, onCancel }: ExerciseEditorProps)
                 <p key={it.id} className="text-sm text-gray-800 mb-1">
                   <span className="text-gray-400 mr-1.5">{i + 1}</span>
                   {it.before && `${it.before} `}
-                  <span className="italic text-purple-700 font-medium">{it.opt1} / {it.opt2}</span>
+                  <span className="italic text-purple-700 font-medium">
+                    {it.opt1} / {it.opt2}{it.opt3.trim() && ` / ${it.opt3}`}
+                  </span>
                   {it.after && ` ${it.after}`}
                 </p>
               ))}

@@ -55,6 +55,44 @@ function qTypeLabel(q_type: string): { label: string; color: string } {
   return map[q_type] ?? { label: q_type, color: 'bg-gray-100 text-gray-600' }
 }
 
+// Helper: en preguntas MC Cloze, el mismo párrafo se repite entero en cada
+// pregunta (una por hueco). Esto separa visualmente la consigna de cierre
+// ("Which word is correct for gap (N)?") y resalta el número de hueco (N)
+// dentro del párrafo para que el alumno sepa de un vistazo cuál mirar.
+function renderQuestionBody(body: string) {
+  const blocks = body.split('\n\n').filter(Boolean)
+  const gapRegex = /Which word is correct for gap \((\d+)\)\s*\??/i
+  const gapBlockIdx = blocks.findIndex(b => gapRegex.test(b))
+  const gapMatch  = gapBlockIdx >= 0 ? blocks[gapBlockIdx].match(gapRegex) : null
+  const gapToken  = gapMatch ? `(${gapMatch[1]})` : null
+
+  return blocks.map((block, bi) => {
+    if (bi === gapBlockIdx) {
+      return (
+        <p key={bi} className="inline-flex items-center gap-1.5 text-sm font-semibold text-purple-700 bg-purple-50 border border-purple-200 rounded-lg px-3 py-1.5 mt-2">
+          <span>👉</span>{block}
+        </p>
+      )
+    }
+    if (gapToken && block.includes(gapToken)) {
+      const parts = block.split(gapToken)
+      return (
+        <p key={bi} className="text-gray-900 font-medium text-lg leading-snug">
+          {parts.map((part, pi) => (
+            <span key={pi}>
+              {part}
+              {pi < parts.length - 1 && (
+                <mark className="bg-yellow-200 text-purple-800 font-bold rounded px-1">{gapToken}</mark>
+              )}
+            </span>
+          ))}
+        </p>
+      )
+    }
+    return <p key={bi} className="text-gray-900 font-medium text-lg leading-snug">{block}</p>
+  })
+}
+
 type Phase = 'instructions' | 'exam'
 
 // ── Shuffle determinístico por alumno ────────────────────────────────────────
@@ -805,7 +843,7 @@ function ExamPage({ params }: { params: Promise<{ id: string }> }) {
                       {qTypeLabel(question.q_type).label}
                     </span>
                   </div>
-                  <p className="text-gray-900 font-medium mt-1 text-lg leading-snug">{question.body}</p>
+                  <div className="mt-1 space-y-1.5">{renderQuestionBody(question.body)}</div>
                 </div>
                 <span className="text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded-full whitespace-nowrap">
                   {question.points} pt{question.points !== 1 ? 's' : ''}

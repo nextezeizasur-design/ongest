@@ -18,6 +18,7 @@ export type ExerciseType =
   | 'writing'      // Free writing prompt
   | 'reading'      // Texto + preguntas de comprensión
   | 'listening'    // Audio + consigna + preguntas T/F o múltiple opción
+  | 'mc_cloze'     // Texto corrido con huecos numerados, 3 opciones fijas (a/b/c) por hueco
 
 export interface ExerciseQuestion {
   id:          string
@@ -54,6 +55,7 @@ const EXERCISE_TYPES: { type: ExerciseType; label: string; icon: string; desc: s
   { type: 'writing',   icon: '📝', label: 'Writing',        desc: 'Redacción libre con guías o preguntas orientadoras' },
   { type: 'reading',   icon: '📖', label: 'Reading',        desc: 'Texto de lectura con párrafos y preguntas de comprensión opcionales' },
   { type: 'listening',  icon: '🎧', label: 'Listening',      desc: 'Audio con consigna y preguntas de comprensión auditiva' },
+  { type: 'mc_cloze',   icon: '🧩', label: 'MC Cloze',       desc: 'Texto corrido con huecos numerados — cada uno con 3 opciones fijas a) b) c)' },
 ]
 
 const SKILL_OPTIONS = [
@@ -74,6 +76,7 @@ const DEFAULT_INSTRUCTIONS: Record<ExerciseType, string> = {
   writing:   'Write a short paragraph. Use the questions below as a guide.',
   reading:   'Read the text.',
   listening: 'Listen to the audio and answer the questions.',
+  mc_cloze:  'Complete the text with the correct answer, a), b) or c).',
 }
 
 const DEFAULT_SKILL: Record<ExerciseType, string> = {
@@ -86,6 +89,7 @@ const DEFAULT_SKILL: Record<ExerciseType, string> = {
   writing:   'writing',
   reading:   'reading',
   listening: 'listening',
+  mc_cloze:  'grammar',
 }
 
 function uid() { return Math.random().toString(36).slice(2, 9) }
@@ -141,6 +145,17 @@ export default function ExerciseEditor({ onAdd, onCancel }: ExerciseEditorProps)
     { id: uid(), body: '', q_type: 'short_answer', options: ['', '', '', ''], correct: 0, answer: '' },
   ])
   const [readingHasQuestions, setReadingHasQuestions] = useState(true)
+
+  // MC Cloze — un texto corrido compartido + huecos numerados, cada uno con
+  // 3 opciones fijas (a/b/c) y una marcada como correcta
+  const [clozeText,  setClozeText]  = useState('')
+  const [clozeItems, setClozeItems] = useState<{
+    id: string; a: string; b: string; c: string; correct: 0 | 1 | 2
+  }[]>([
+    { id: uid(), a: '', b: '', c: '', correct: 0 },
+    { id: uid(), a: '', b: '', c: '', correct: 0 },
+    { id: uid(), a: '', b: '', c: '', correct: 0 },
+  ])
 
   // Listening
   const [listeningAudioUrl,   setListeningAudioUrl]   = useState('')
@@ -341,6 +356,32 @@ export default function ExerciseEditor({ onAdd, onCancel }: ExerciseEditorProps)
           })
       }
 
+      case 'mc_cloze': {
+        // El texto completo (con los huecos numerados tal como los escribió el
+        // docente) se repite en el enunciado de cada pregunta — no hay una
+        // columna propia en `questions` para guardar un texto compartido una
+        // sola vez, así que cada hueco debe quedar autocontenido para que el
+        // alumno tenga contexto sin depender de las preguntas anteriores.
+        const text = clozeText.trim()
+        if (!text) return []
+        return clozeItems
+          .filter(it => it.a.trim())
+          .map((it, i) => {
+            const opts = [it.a, it.b, it.c]
+              .map((val, oi) => ({ body: val.trim(), is_correct: oi === it.correct }))
+              .filter(o => o.body)
+            return {
+              id:          uid(),
+              body:        `${text}\n\nWhich word is correct for gap (${i + 1})?`,
+              options:     opts,
+              q_type:      'multiple_choice' as const,
+              skill,
+              points,
+              explanation: '',
+            }
+          })
+      }
+
       case 'passive': {
         const BLANK = '_'.repeat(32)
         return passiveItems
@@ -460,6 +501,7 @@ export default function ExerciseEditor({ onAdd, onCancel }: ExerciseEditorProps)
     : exType === 'reading' ? (readingHasQuestions ? readingQuestions.filter(q => q.body.trim()).length : 1)
     : exType === 'listening' ? listeningQuestions.filter(q => q.body.trim()).length
     : exType === 'passive' ? passiveItems.filter(i => i.active.trim() && i.subject.trim()).length
+    : exType === 'mc_cloze' ? (clozeText.trim() ? clozeItems.filter(i => i.a.trim()).length : 0)
     : simpleItems.filter(i => i.body.trim()).length
 
   return (
@@ -1245,6 +1287,91 @@ export default function ExerciseEditor({ onAdd, onCancel }: ExerciseEditorProps)
                 className="input text-sm" />
             </div>
           </div>
+        </div>
+      )}
+
+      {/* MC CLOZE */}
+      {exType === 'mc_cloze' && (
+        <div className="space-y-4">
+          <div>
+            <label className="label text-xs mb-1">Texto con los huecos numerados</label>
+            <textarea
+              rows={6}
+              value={clozeText}
+              onChange={e => setClozeText(e.target.value)}
+              placeholder={`Pegá el texto completo tal como lo ve el alumno, con los huecos numerados entre guiones.\n\nEj: Margaret Thatcher was born in 1925. She was interested (1) --- politics. She was (2) --- good student and won a (3) --- .`}
+              className="textarea text-sm"
+            />
+            <p className="text-xs text-gray-400 mt-1">
+              Este texto se repite en cada pregunta del hueco correspondiente, para que el alumno siempre tenga el párrafo completo a la vista.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Huecos — marcá la opción correcta</p>
+            {clozeItems.map((it, i) => (
+              <div key={it.id} className="rounded-xl border border-gray-200 p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-gray-500">Hueco {i + 1}</span>
+                  <button
+                    onClick={() => setClozeItems(prev => prev.filter((_, j) => j !== i))}
+                    disabled={clozeItems.length <= 1}
+                    className="text-gray-300 hover:text-red-500 disabled:opacity-20"
+                  >
+                    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.5} className="h-3.5 w-3.5">
+                      <path d="M4 8h8"/>
+                    </svg>
+                  </button>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  {(['a', 'b', 'c'] as const).map((letter, oi) => (
+                    <div key={letter} className="flex items-center gap-1.5">
+                      <button
+                        onClick={() => setClozeItems(prev => prev.map((x, j) => j === i ? { ...x, correct: oi as 0 | 1 | 2 } : x))}
+                        className={`flex-shrink-0 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${
+                          it.correct === oi ? 'border-green-500 bg-green-500' : 'border-gray-300 hover:border-green-400'
+                        }`}
+                        title="Marcar como correcta"
+                      >
+                        {it.correct === oi && (
+                          <svg viewBox="0 0 10 10" fill="none" stroke="white" strokeWidth={2} className="h-2.5 w-2.5">
+                            <path d="M2 5l2.5 2.5 3.5-4"/>
+                          </svg>
+                        )}
+                      </button>
+                      <input
+                        type="text"
+                        value={it[letter]}
+                        onChange={e => setClozeItems(prev => prev.map((x, j) => j === i ? { ...x, [letter]: e.target.value } : x))}
+                        placeholder={letter}
+                        className={`input text-sm flex-1 ${it.correct === oi ? 'border-green-300 bg-green-50' : ''}`}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+            <button
+              onClick={() => setClozeItems(prev => [...prev, { id: uid(), a: '', b: '', c: '', correct: 0 }])}
+              className="text-xs text-purple-600 hover:text-purple-800"
+            >
+              + Agregar hueco
+            </button>
+          </div>
+
+          {/* Preview */}
+          {clozeText.trim() && clozeItems.some(it => it.a.trim()) && (
+            <div className="rounded-lg bg-gray-50 border border-gray-200 px-3 py-2">
+              <p className="text-xs font-medium text-gray-500 mb-1.5">Preview — respuesta correcta por hueco:</p>
+              <div className="flex flex-wrap gap-1.5">
+                {clozeItems.filter(it => it.a.trim()).map((it, i) => (
+                  <span key={it.id} className="text-xs px-2 py-1 rounded-lg border font-medium bg-green-50 border-green-200 text-green-800">
+                    {i + 1}) {[it.a, it.b, it.c][it.correct]}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

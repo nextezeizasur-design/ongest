@@ -840,9 +840,10 @@ export default function NewEvaluationPage() {
                 <ExerciseEditor
                   onAdd={(qs, instruction) => {
                     // Todas las preguntas de este ejercicio comparten groupId para poder
-                    // mostrarse agrupadas visualmente. La consigna se guarda una sola vez,
-                    // en el primer ítem del grupo, como campo propio (no mezclada en el body)
-                    // para que quede claro que aplica a todo el bloque.
+                    // mostrarse agrupadas visualmente. La consigna se repite en CADA
+                    // pregunta del bloque (no solo la primera): el alumno navega de a
+                    // una pregunta por vez, así que si quedaba solo en el ítem 1, dejaba
+                    // de verse desde el ítem 2 en adelante.
                     const groupId = genId()
                     const trimmedInstruction = instruction.trim()
                     const drafted: QuestionDraft[] = qs.map((q, i) => ({
@@ -854,7 +855,7 @@ export default function NewEvaluationPage() {
                       options: q.options.map(o => ({ id: genId(), body: o.body, is_correct: o.is_correct })),
                       expected_answer: q.explanation || undefined,
                       groupId,
-                      instruction: (trimmedInstruction && i === 0) ? trimmedInstruction : undefined,
+                      instruction: trimmedInstruction || undefined,
                     }))
                     setQuestions(prev => [...prev, ...drafted])
                     setShowExercise(false)

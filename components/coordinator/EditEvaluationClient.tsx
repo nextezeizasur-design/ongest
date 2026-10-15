@@ -566,7 +566,10 @@ export default function EditEvaluationClient({ evaluation: ev, questions: dbQs, 
                       options: q.options.map(o => ({ id: genId(), body: o.body, is_correct: o.is_correct })),
                       expected_answer: q.explanation || undefined,
                       groupId,
-                      instruction: (trimmedInstruction && i === 0) ? trimmedInstruction : undefined,
+                      // Se repite en CADA pregunta del bloque (no solo la primera): el
+                      // alumno navega de a una pregunta por vez, así que si la consigna
+                      // quedaba solo en el ítem 1, dejaba de verse desde el ítem 2 en adelante.
+                      instruction: trimmedInstruction || undefined,
                     }))
                     setQuestions(prev => [...prev, ...drafted])
                     setShowExercise(false)

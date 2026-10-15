@@ -275,9 +275,12 @@ export default function ExerciseEditor({ onAdd, onCancel }: ExerciseEditorProps)
         const qs: ExerciseQuestion[] = []
 
         if (readingHasQuestions) {
-          // Preguntas de comprensión
+          // Preguntas de comprensión — el párrafo completo (readingBody) va
+          // repetido en CADA pregunta del bloque, no solo como referencia
+          // "[Reading: título]": el alumno navega de a una pregunta por vez,
+          // así que si el texto no viaja con la pregunta, no lo ve nunca.
           for (const rq of readingQuestions.filter(q => q.q_type === 'underline' ? (q.opt1.trim() && q.opt2.trim()) : q.body.trim())) {
-            const contextBody = `[Reading: ${readingTitle || 'text above'}]\n${rq.body.trim()}`
+            const contextBody = `${readingBody}\n\n${rq.body.trim()}`
             if (rq.q_type === 'multiple_choice') {
               const opts = rq.options.filter(o => o.trim())
               qs.push({
@@ -290,7 +293,7 @@ export default function ExerciseEditor({ onAdd, onCancel }: ExerciseEditorProps)
                 explanation: '',
               })
             } else if (rq.q_type === 'underline') {
-              const underlineBody = `[Reading: ${readingTitle || 'text above'}]\n${[rq.body.trim(), `${rq.opt1} / ${rq.opt2}`, rq.after.trim()].filter(Boolean).join(' ')}`
+              const underlineBody = `${readingBody}\n\n${[rq.body.trim(), `${rq.opt1} / ${rq.opt2}`, rq.after.trim()].filter(Boolean).join(' ')}`
               qs.push({
                 id:          uid(),
                 body:        underlineBody,

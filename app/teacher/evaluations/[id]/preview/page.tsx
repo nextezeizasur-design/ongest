@@ -17,7 +17,9 @@ export default async function TeacherEvaluationPreview({
 }) {
   const { id }   = await params
   const { from } = await searchParams
-  const backHref = from === 'coordinator' ? `/coordinator/evaluations/${id}` : `/teacher/evaluations/${id}`
+  const backHref = from === 'coordinator' ? `/coordinator/evaluations/${id}`
+                  : from === 'director'    ? `/director/evaluations/${id}`
+                  : `/teacher/evaluations/${id}`
   const profile  = await requireRole(['director', 'coordinator', 'teacher'] as any)
   const supabase = await createClient()
   const sb       = supabase as any

@@ -205,6 +205,9 @@ export default async function TeacherEvaluationDetail({
         actions={
           <div className="flex gap-2">
             <Badge variant={BADGE[st] ?? 'gray'}>{EVAL_STATUS_LABEL[st]}</Badge>
+            <a href={`/teacher/evaluations/${id}/preview`} target="_blank" className="btn-outline text-sm">
+              👁️ Vista previa
+            </a>
             <a href={`/teacher/evaluations/${id}/assets`} className="btn-outline text-sm">
               📎 Archivos
             </a>

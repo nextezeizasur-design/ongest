@@ -82,6 +82,13 @@ function renderBodyBlocks(body: string) {
         </p>
       )
     }
+    if (block.startsWith('❓ ')) {
+      return (
+        <p key={bi} className="inline-flex items-start gap-1.5 text-sm font-semibold text-blue-800 bg-blue-50 border border-blue-200 rounded-lg px-2.5 py-1.5 mb-3">
+          <span>❓</span><span>{block.slice(2).trim()}</span>
+        </p>
+      )
+    }
     return <p key={bi} className="text-sm font-medium text-gray-900 mb-3 leading-relaxed">{block}</p>
   })
 }

@@ -14,6 +14,7 @@
 
 import { useState } from 'react'
 import ExamAssetViewer from '@/components/shared/ExamAssetViewer'
+import { replaceBlock, hasBlock } from '@/lib/replace-block'
 
 interface Option {
   id: string
@@ -36,6 +37,10 @@ interface ExamPreviewClientProps {
   instructions?: string | null
   timeLimitMin?: number | null
   questions: Question[]
+  /** Si es true, cada bloque de texto tiene un botón para corregirlo. */
+  canEdit?: boolean
+  /** Motivo por el que no se puede editar (se muestra al docente). */
+  editBlockedReason?: string | null
 }
 
 function qTypeLabel(q_type: string): { label: string; color: string } {
@@ -54,6 +59,7 @@ function qTypeLabel(q_type: string): { label: string; color: string } {
 // gap (N)?") y resalta el número de hueco (N) dentro del párrafo — idéntico
 // a lo que ve el alumno en app/exam/[id]/page.tsx.
 function renderQuestionBody(body: string) {
+  if (!body) return null
   const blocks = body.split('\n\n').filter(Boolean)
   const gapRegex = /Which word is correct for gap \((\d+)\)\s*\??/i
   const gapBlockIdx = blocks.findIndex(b => gapRegex.test(b))
@@ -95,10 +101,52 @@ function renderQuestionBody(body: string) {
 }
 
 export default function ExamPreviewClient({
-  evaluationId, title, instructions, timeLimitMin, questions,
+  evaluationId, title, instructions, timeLimitMin, questions: initialQuestions,
+  canEdit = false, editBlockedReason = null,
 }: ExamPreviewClientProps) {
   const [currentQ, setCurrentQ] = useState(0)
   const [answers,  setAnswers]  = useState<Record<string, string>>({})
+  // Copia local de las preguntas: al corregir un texto se refleja al instante.
+  const [questions, setQuestions] = useState<Question[]>(initialQuestions)
+
+  // Edición de un bloque de texto (consigna, párrafo, enunciado)
+  const [editing,   setEditing]   = useState<{ block: string; prefix: string; text: string } | null>(null)
+  const [saving,    setSaving]    = useState(false)
+  const [editError, setEditError] = useState<string | null>(null)
+  const [savedMsg,  setSavedMsg]  = useState<string | null>(null)
+
+  function startEdit(block: string) {
+    // El marcador (📌 consigna / ❓ pregunta) no se edita: lo usa la plataforma
+    // para dar formato, así que se conserva aparte.
+    const m = block.match(/^(📌|❓) ([\s\S]*)$/)
+    setEditError(null)
+    setSavedMsg(null)
+    setEditing({ block, prefix: m ? `${m[1]} ` : '', text: m ? m[2] : block })
+  }
+
+  async function saveEdit() {
+    if (!editing) return
+    const newBlock = editing.text.trim() ? `${editing.prefix}${editing.text.trim()}` : ''
+    if (newBlock === editing.block) { setEditing(null); return }
+    setSaving(true)
+    setEditError(null)
+    try {
+      const res  = await fetch(`/api/evaluations/${evaluationId}/blocks`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ oldBlock: editing.block, newBlock }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) { setEditError(data.error ?? 'No se pudo guardar.'); return }
+      setQuestions(prev => prev.map(q => ({ ...q, body: replaceBlock(q.body, editing.block, newBlock) })))
+      setSavedMsg(`✓ Guardado en ${data.updated} pregunta${data.updated !== 1 ? 's' : ''}.`)
+      setEditing(null)
+    } catch (e: any) {
+      setEditError(e?.message ?? 'Error de red.')
+    } finally {
+      setSaving(false)
+    }
+  }
 
   const total    = questions.length
   if (total === 0) {
@@ -199,7 +247,67 @@ export default function ExamPreviewClient({
                       {qTypeLabel(question.q_type).label}
                     </span>
                   </div>
-                  <div className="mt-1 space-y-1.5">{renderQuestionBody(question.body)}</div>
+                  <div className="mt-1 space-y-1.5">
+                    {(() => {
+                      const blocks = question.body ? question.body.split('\n\n').filter(Boolean) : []
+                      const nodes  = (renderQuestionBody(question.body) as any[] | null) ?? []
+                      return blocks.map((block, bi) => {
+                        const shared = questions.filter(q => hasBlock(q.body, block)).length
+                        const isEditingThis = editing?.block === block
+                        return (
+                          <div key={bi} className="group">
+                            {!isEditingThis && nodes[bi]}
+                            {isEditingThis && editing && (
+                              <div className="rounded-xl border-2 border-amber-300 bg-amber-50 p-3 space-y-2">
+                                <p className="text-xs font-semibold text-amber-800">
+                                  ✏️ Editando {editing.prefix.trim() === '📌' ? 'la consigna' : 'el texto'}
+                                  {shared > 1 && ` — se corrige en las ${shared} preguntas que lo comparten`}
+                                </p>
+                                <textarea
+                                  value={editing.text}
+                                  onChange={e => setEditing({ ...editing, text: e.target.value })}
+                                  rows={Math.min(14, Math.max(3, Math.ceil(editing.text.length / 70)))}
+                                  className="w-full rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                                  autoFocus
+                                />
+                                {editError && <p className="text-xs text-red-600">⚠ {editError}</p>}
+                                <div className="flex gap-2">
+                                  <button
+                                    onClick={saveEdit}
+                                    disabled={saving}
+                                    className="px-3 py-1.5 text-xs font-semibold text-white rounded-lg disabled:opacity-50"
+                                    style={{ backgroundColor: '#642f8d' }}
+                                  >
+                                    {saving ? 'Guardando…' : 'Guardar cambio'}
+                                  </button>
+                                  <button
+                                    onClick={() => { setEditing(null); setEditError(null) }}
+                                    disabled={saving}
+                                    className="px-3 py-1.5 text-xs font-medium text-gray-600 border border-gray-300 rounded-lg bg-white"
+                                  >
+                                    Cancelar
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                            {canEdit && !isEditingThis && (
+                              <button
+                                onClick={() => startEdit(block)}
+                                className="mt-0.5 text-[11px] text-gray-400 hover:text-purple-700 underline-offset-2 hover:underline"
+                                title="Corregir este texto"
+                              >
+                                ✏️ Editar{shared > 1 ? ` (afecta a ${shared} preguntas)` : ''}
+                              </button>
+                            )}
+                          </div>
+                        )
+                      })
+                    })()}
+                    {savedMsg && <p className="text-xs font-medium text-green-700">{savedMsg}</p>}
+                    {!canEdit && editBlockedReason && (
+                      <p className="text-[11px] text-gray-400">🔒 {editBlockedReason}</p>
+                    )}
+                  </div>
                 </div>
                 <span className="text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded-full whitespace-nowrap">
                   {question.points} pt{question.points !== 1 ? 's' : ''}

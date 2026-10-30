@@ -1070,14 +1070,23 @@ export default function NewEvaluationPage() {
                               )}
 
                               {/* Consigna del ejercicio */}
-                              {q.instruction && (
+                              {q.instruction !== undefined && (
                                 <div className="mt-2 rounded-lg border border-purple-200 bg-purple-50 px-3 py-2">
                                   <p className="text-[10px] font-semibold uppercase tracking-wide text-purple-500 mb-1">
-                                    📌 Consigna
+                                    📌 Consigna <span className="normal-case font-normal text-purple-400">(editable — el cambio se aplica a todas las preguntas que comparten esta consigna)</span>
                                   </p>
-                                  <p className="text-[11px] leading-relaxed text-purple-900 whitespace-pre-line">
-                                    {q.instruction}
-                                  </p>
+                                  <textarea
+                                    rows={Math.min(8, Math.max(2, Math.ceil((q.instruction?.length ?? 0) / 70)))}
+                                    value={q.instruction}
+                                    onChange={e => {
+                                      const nuevo = e.target.value
+                                      const previa = q.instruction
+                                      setImportedQs(prev =>
+                                        prev ? prev.map(x => x.instruction === previa ? { ...x, instruction: nuevo } : x) : prev
+                                      )
+                                    }}
+                                    className="w-full rounded-md border border-purple-200 bg-white px-2 py-1.5 text-[11px] leading-relaxed text-purple-900 focus:outline-none focus:ring-1 focus:ring-purple-300"
+                                  />
                                 </div>
                               )}
                             </div>

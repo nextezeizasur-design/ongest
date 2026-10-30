@@ -2,11 +2,6 @@
 // Usa Claude API (claude-sonnet-4-6) para parsear ejercicios desde PDF de Macmillan u otras editoriales.
 // Costo estimado: ~$0.015 USD por PDF. 80 PDFs/mes ≈ $1.20 USD/mes.
 
-// Plan Hobby de Vercel: sin esto, la función se corta a los 10s por defecto.
-// Un PDF con varias secciones (8+ ejercicios) puede tardar más que eso en que
-// Claude arme el JSON completo — 60s es el máximo permitido en Hobby sin Fluid Compute.
-export const maxDuration = 60
-
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { cookies } from 'next/headers'
@@ -14,6 +9,9 @@ import { rateLimit, getClientIp } from '@/lib/rate-limit'
 
 const ALLOWED_ROLES = [1, 2, 5]
 const RATE_LIMIT    = { windowMs: 10 * 60 * 1000, max: 10 }
+// La consigna puede incluir el texto completo de un Reading, así que el tope es holgado
+// (antes 300/400 caracteres cortaba los textos de lectura a la mitad).
+const INSTRUCTION_MAX = 4000
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -97,6 +95,13 @@ REGLAS GENERALES:
 - Incluí TODOS los ítems numerados del 1 en adelante, de TODAS las secciones.
 - Respondé ÚNICAMENTE con un array JSON válido. Sin texto, sin markdown, sin bloques de código.
 - CRÍTICO: usa solo comillas dobles en el JSON. No uses saltos de línea dentro de los valores de los campos.
+- Si necesitás un salto de línea dentro de un valor (por ejemplo entre la consigna y un texto de lectura), escribilo como \\n escapado.
+
+CLARIDAD DE LAS CONSIGNAS (MUY IMPORTANTE):
+- Los PDF suelen llegar con espacios mal puestos, signos de puntuación faltantes o líneas cortadas a mitad de oración. En "instruction" y "body" reconstruí la oración tal como debería leerla un alumno.
+- Corregí SOLO formato: espacios, mayúscula inicial, comas, puntos, signos de pregunta/exclamación y paréntesis. NO cambies palabras, NO traduzcas, NO reformules y NO agregues contenido que no esté en el examen.
+- Unificá en una sola oración o párrafo las líneas que el PDF cortó por el ancho de la página.
+- Cada consigna debe terminar con su signo de cierre (punto, dos puntos o signo de pregunta).
 
 CÓMO IDENTIFICAR LA CONSIGNA DE CADA EJERCICIO:
 - La consigna es el texto que empieza con el número del ejercicio (ej: "1 Listen to...", "2 Match the...", "3 Select the...")
@@ -193,22 +198,89 @@ async function extractPdfText(file: File): Promise<string> {
     const page        = await pdf.getPage(i)
     const textContent = await page.getTextContent()
 
-    let lastY: number | null = null
-    let pageText = ''
-    for (const item of textContent.items as any[]) {
-      const str = item.str ?? ''
-      const y   = item.transform?.[5] ?? null
-      if (lastY !== null && y !== null && y !== lastY) {
-        pageText += '\n'
-      }
-      pageText += str
-      lastY = y
+    // Agrupa los fragmentos en líneas por posición vertical (con tolerancia, porque
+    // en muchos PDFs un mismo renglón viene en fragmentos con Y levemente distinta),
+    // ordena cada línea de izquierda a derecha y agrega el espacio que el PDF
+    // representa solo como "hueco" entre fragmentos. Antes se concatenaba sin
+    // espacios, lo que pegaba palabras y comía signos de puntuación.
+    type Frag = { str: string; x: number; y: number; w: number; h: number }
+    const frags: Frag[] = (textContent.items as any[])
+      .filter(it => typeof it.str === 'string' && it.str.length > 0)
+      .map(it => ({
+        str: it.str as string,
+        x:   it.transform?.[4] ?? 0,
+        y:   it.transform?.[5] ?? 0,
+        w:   it.width  ?? 0,
+        h:   Math.abs(it.height ?? it.transform?.[3] ?? 10) || 10,
+      }))
+
+    // Arriba → abajo (Y decreciente en coordenadas PDF)
+    frags.sort((a, b) => b.y - a.y || a.x - b.x)
+
+    const lines: Frag[][] = []
+    for (const f of frags) {
+      const line = lines[lines.length - 1]
+      if (line && Math.abs(line[0].y - f.y) <= Math.max(2, f.h * 0.35)) line.push(f)
+      else lines.push([f])
     }
+
+    const pageText = lines
+      .map(line => {
+        line.sort((a, b) => a.x - b.x)
+        let out = ''
+        let prevEnd: number | null = null
+        let prevH = 10
+        for (const f of line) {
+          if (prevEnd !== null) {
+            const gap = f.x - prevEnd
+            const needsSpace =
+              gap > prevH * 0.15 && !/\s$/.test(out) && !/^\s/.test(f.str)
+            if (needsSpace) out += ' '
+          }
+          out += f.str
+          prevEnd = f.x + f.w
+          prevH   = f.h
+        }
+        return out.replace(/[ \t]+/g, ' ').trim()
+      })
+      .filter(l => l.length > 0)
+      .join('\n')
 
     fullText += `\n\n${pageText}`
   }
 
   return fullText.trim()
+}
+
+// ─── Normalización determinística de texto (consignas, enunciados, opciones) ──
+// Corrige SOLO formato: espacios y signos de puntuación. No toca palabras, así
+// que el sentido de la consigna no cambia. Se aplica siempre, además de lo que
+// haga la IA, para que el resultado no dependa de que el modelo "se acuerde".
+
+function normalizeText(raw: string, opts: { sentence?: boolean } = {}): string {
+  if (!raw) return ''
+  let s = String(raw)
+    .replace(/ /g, ' ')                 // espacio no separable → espacio
+    .replace(/[ \t]+/g, ' ')                  // espacios múltiples
+    .replace(/ *\n */g, '\n')                 // espacios alrededor de saltos
+    .replace(/\n{3,}/g, '\n\n')               // máximo un párrafo en blanco
+    .replace(/[ \t]+([,;:!?])/g, '$1')        // sin espacio antes de , ; : ! ?
+    .replace(/[ \t]+\.(?!\d)/g, '.')          // sin espacio antes de "." (salvo ".5")
+    .replace(/([,;:!?])(?=[A-Za-zÁÉÍÓÚáéíóúÑñ])/g, '$1 ')   // espacio después de , ; : ! ?
+    .replace(/([a-záéíóúñ])\.(?=[A-ZÁÉÍÓÚÑ][a-záéíóúñ])/g, '$1. ') // "word.Next" → "word. Next"
+    .replace(/\([ \t]+/g, '(')                // "( texto" → "(texto"
+    .replace(/[ \t]+\)/g, ')')                // "texto )" → "texto)"
+    .replace(/ {2,}/g, ' ')
+    .trim()
+
+  if (opts.sentence && s) {
+    // Mayúscula inicial en cada párrafo
+    s = s.replace(/(^|\n)([a-záéíóúñ])/g, (_m, pre, ch) => pre + ch.toUpperCase())
+    // Signo de cierre en la última línea de la consigna si falta
+    const lastLine = s.split('\n').pop() ?? ''
+    if (lastLine && !/[.:?!"”’]$/.test(lastLine)) s += '.'
+  }
+  return s
 }
 
 // ─── Llamar a Claude API ──────────────────────────────────────────────────────
@@ -297,7 +369,7 @@ async function parseWithClaude(text: string, cefrLevel: string | null): Promise<
   return parsed
     .filter((q: any) => q.body && q.body.trim().length > 3)
     .map((q: any, i: number) => ({
-      body:             String(q.body ?? '').trim(),
+      body:             normalizeText(String(q.body ?? '')),
       q_type:           ['multiple_choice','true_false','short_answer','essay'].includes(q.q_type)
                           ? q.q_type
                           : 'short_answer',
@@ -309,10 +381,10 @@ async function parseWithClaude(text: string, cefrLevel: string | null): Promise<
       topic:            q.skill ?? null,
       explanation:      null,
       options:          Array.isArray(q.options) ? q.options.map((o: any) => ({
-                          body:       String(o.body ?? '').trim(),
+                          body:       normalizeText(String(o.body ?? '')),
                           is_correct: Boolean(o.is_correct),
                         })) : [],
-      instruction:      q.instruction ? String(q.instruction).slice(0, 300) : undefined,
+      instruction:      q.instruction ? normalizeText(String(q.instruction).slice(0, INSTRUCTION_MAX), { sentence: true }) : undefined,
       points:           q.q_type === 'essay' ? 5 : 1,
       needs_review:     q.needs_review !== false,  // default true
     }))
@@ -330,6 +402,12 @@ REGLAS GENERALES:
 - Incluí TODOS los ítems numerados del 1 en adelante.
 - Respondé ÚNICAMENTE con un array JSON válido. Sin texto, sin markdown, sin bloques de código.
 - CRÍTICO: usa solo comillas dobles en el JSON. No uses saltos de línea dentro de los valores.
+- Si necesitás un salto de línea dentro de un valor (por ejemplo entre la consigna y un texto de lectura), escribilo como \\n escapado.
+
+CLARIDAD DE LAS CONSIGNAS (MUY IMPORTANTE):
+- Transcribí la consigna tal como la vería un alumno, con espacios y puntuación correctos y una sola oración o párrafo por consigna.
+- Corregí SOLO formato (espacios, mayúscula inicial, signos de puntuación). NO cambies palabras, NO traduzcas y NO agregues contenido que no esté en el examen.
+- Cada consigna debe terminar con su signo de cierre (punto, dos puntos o signo de pregunta).
 
 CÓMO IDENTIFICAR LA CONSIGNA:
 - La consigna es el texto en negrita antes de los ítems.
@@ -426,7 +504,7 @@ async function parseWithClaudeVision(
   return parsed
     .filter((q: any) => q.body && q.body.trim().length > 3)
     .map((q: any) => ({
-      body:             String(q.body ?? '').trim(),
+      body:             normalizeText(String(q.body ?? '')),
       q_type:           ['multiple_choice','true_false','short_answer','essay'].includes(q.q_type)
                           ? q.q_type : 'short_answer',
       skill:            ['grammar','vocabulary','reading','writing','listening'].includes(q.skill)
@@ -436,10 +514,10 @@ async function parseWithClaudeVision(
       topic:            q.skill ?? null,
       explanation:      null,
       options:          Array.isArray(q.options) ? q.options.map((o: any) => ({
-                          body:       String(o.body ?? '').trim(),
+                          body:       normalizeText(String(o.body ?? '')),
                           is_correct: Boolean(o.is_correct),
                         })) : [],
-      instruction:      q.instruction ? String(q.instruction).slice(0, 400) : undefined,
+      instruction:      q.instruction ? normalizeText(String(q.instruction).slice(0, INSTRUCTION_MAX), { sentence: true }) : undefined,
       points:           q.q_type === 'essay' ? 5 : 1,
       needs_review:     q.needs_review !== false,
     }))

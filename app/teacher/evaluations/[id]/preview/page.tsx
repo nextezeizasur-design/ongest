@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { requireRole } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import ExamPreviewClient from '@/components/shared/ExamPreviewClient'
+import { getEditBlockReason } from '@/lib/evaluation-edit'
 
 export const metadata = { title: 'Vista previa' }
 
@@ -26,7 +27,7 @@ export default async function TeacherEvaluationPreview({
 
   const { data: ev } = await sb
     .from('evaluations')
-    .select('id, title, instructions, time_limit_min')
+    .select('id, title, instructions, time_limit_min, status, available_from, available_until, created_by')
     .eq('id', id)
     .eq('organization_id', profile.organization_id)
     .single()
@@ -83,6 +84,21 @@ export default async function TeacherEvaluationPreview({
       options: (q.options ?? []).slice().sort((a: any, b: any) => (a.sort_order ?? 0) - (b.sort_order ?? 0)),
     }))
 
+  // ── ¿Puede corregir consignas/textos desde esta vista? ──
+  // Director y coordinador: siempre. Docente: solo en una evaluación que él creó.
+  // En todos los casos, solo hasta que el examen se abre a los alumnos (borrador,
+  // o publicado con inicio futuro) y sin intentos. El servidor vuelve a validar.
+  let editReason: string | null = null
+  if (profile.role === 'teacher' && ev.created_by !== profile.id) {
+    editReason = 'Solo podés editar evaluaciones que creaste vos.'
+  } else {
+    const { count: attemptCount } = await sb
+      .from('attempts')
+      .select('id', { count: 'exact', head: true })
+      .eq('evaluation_id', id)
+    editReason = getEditBlockReason(ev, attemptCount ?? 0)
+  }
+
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
       <div className="bg-white border-b border-gray-200 px-4 py-2">
@@ -96,6 +112,8 @@ export default async function TeacherEvaluationPreview({
         instructions={ev.instructions}
         timeLimitMin={ev.time_limit_min}
         questions={sortedQuestions}
+        canEdit={editReason === null}
+        editBlockedReason={editReason}
       />
     </div>
   )

@@ -258,7 +258,12 @@ export default function ImportReviewClient({
       const { data: newQ, error: qErr } = await supabase
         .from('questions')
         .insert({
-          body:             q.body.trim(),
+          // Misma convención que el resto de la plataforma: la consigna viaja
+          // dentro del body como "📌 consigna\n\nenunciado" para que el alumno
+          // la vea en cada pregunta (antes se descartaba al guardar en el banco).
+          body:             q.instruction?.trim()
+                              ? `📌 ${q.instruction.trim()}\n\n${q.body.trim()}`
+                              : q.body.trim(),
           q_type:           q.q_type,
           skill:            q.skill,
           difficulty_label: q.difficulty_label,
@@ -435,7 +440,19 @@ export default function ImportReviewClient({
             onToggleCheck={() => toggleCheck(q.id)}
             onToggleExpand={() => toggleExpand(q.id)}
             onRemove={() => removeQuestion(q.id)}
-            onUpdate={patch => updateQuestion(q.id, patch)}
+            onUpdate={patch => {
+              // La consigna es compartida por todas las preguntas de un mismo
+              // ejercicio: al corregirla en una, se corrige en todas las que
+              // tenían el mismo texto.
+              if ('instruction' in patch) {
+                const previa = q.instruction
+                setQuestions(prev => prev.map(x =>
+                  x.instruction === previa ? { ...x, instruction: patch.instruction } : x
+                ))
+              } else {
+                updateQuestion(q.id, patch)
+              }
+            }}
             onSetCorrect={optIdx => setCorrectOption(q.id, optIdx)}
             onUpdateOption={(optIdx, body) => updateOptionBody(q.id, optIdx, body)}
             onAddOption={() => addOption(q.id)}
@@ -737,12 +754,17 @@ function QuestionCard({
           </div>
 
           {/* Info de la sección original */}
-          {q.instruction && (
+          {q.instruction !== undefined && (
             <div className="rounded-lg bg-purple-50 border border-purple-100 px-3 py-2">
-              <p className="text-[10px] font-medium text-purple-600 mb-0.5 uppercase tracking-wide">
-                Instrucción original del PDF
+              <p className="text-[10px] font-medium text-purple-600 mb-1 uppercase tracking-wide">
+                Consigna del PDF <span className="normal-case font-normal text-purple-400">(editable — se corrige en todas las preguntas que la comparten)</span>
               </p>
-              <p className="text-xs text-purple-800">{q.instruction}</p>
+              <textarea
+                rows={Math.min(8, Math.max(2, Math.ceil((q.instruction?.length ?? 0) / 80)))}
+                value={q.instruction}
+                onChange={e => onUpdate({ instruction: e.target.value })}
+                className="textarea text-xs text-purple-900 bg-white"
+              />
             </div>
           )}
         </div>

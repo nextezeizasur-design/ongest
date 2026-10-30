@@ -12,6 +12,18 @@ export const metadata: Metadata = {
   },
   description: 'OnGest — Plataforma de evaluaciones de inglés online',
   manifest: '/manifest.json',
+  // Ícono de la pestaña del navegador (logo de OnGest)
+  icons: {
+    icon: [
+      { url: '/favicon.ico',              sizes: 'any' },
+      { url: '/icons/favicon-16.png',     sizes: '16x16', type: 'image/png' },
+      { url: '/icons/favicon-32.png',     sizes: '32x32', type: 'image/png' },
+      { url: '/icons/favicon-48.png',     sizes: '48x48', type: 'image/png' },
+      { url: '/icons/icon-192.png',       sizes: '192x192', type: 'image/png' },
+    ],
+    shortcut: '/favicon.ico',
+    apple:    '/icons/icon-192.png',
+  },
   appleWebApp: {
     capable:        true,
     statusBarStyle: 'default',
